@@ -1,7 +1,7 @@
 % generic script for a line plot from a .dat file in Matlab
 clc, clf;
 % absolute path to data files 1 and 2
-abs_data_path = '/home/djs244/GROUP_DATABASES/LJ38/interbasin_t015';
+abs_data_path = '/home/djs244/GROUP_DATABASES/LJ38/interbasin_cum';
 fname1 = "rate_lim_cut1000.dat";
 fname2 = "ngt_cum.dat";
 ffmt1="%d %f %f %d";
@@ -38,33 +38,37 @@ xlabel('Path number','Interpreter','latex','FontSize',14)
 ylabel('Path cost','Interpreter','latex','FontSize',14)
 %set the x limits and tick intervals here
 xlimits=[0,1100];
-ylimits1=[10.,40.];
-ylimits2=[0.,0.2E-5];
+ylimits1=[40.,80.];
+ylimits2=[0.,2.5];
+exponent=1.E27; % set to rescale data
+ydata2=ydata2*exponent;
 xtickintvl=200;
-ytickintvl1=5.;
-ytickintvl2=0.05E-5;
+ytickintvl1=5;
+ytickintvl2=0.5;
 xlim([xlimits(1) xlimits(2)])
 ylim([ylimits1(1) ylimits1(2)])
 xticks(xlimits(1):xtickintvl:xlimits(2));
 yticks(ylimits1(1):ytickintvl1:ylimits1(2));
 yyaxis right
 plot(xdata2,ydata2,"b","Linewidth",3.);
-ylabel('Accumulated $k_{AB}^\mathrm{NGT}$','Interpreter','latex','FontSize',14)
+ylabel('Accumulated $k_{AB}^\mathrm{NGT}$ $\times~10^{27}$','Interpreter','latex','FontSize',14)
 ylim([ylimits2(1) ylimits2(2)])
 yticks(ylimits2(1):ytickintvl2:ylimits2(2));
-
 lgd = legend('Path cost','Accumulated $k_{AB}^\mathrm{NGT}$','Interpreter','latex','FontSize',8,'location','southeast');
 legend('boxoff');
 ax = gca;
+ax.YAxis(2).Exponent = 0;
 set(ax,'TickDir','out');
 set(ax,'TickLabelInterpreter','latex','FontSize',12)
-set(ax,'YColor','k')
+set(ax,'YColor','k');
+ytickformat('%.1f')
 set(gcf,'position',[0,0,fig_width,fig_height]);
 set(gcf,'PaperUnits', 'centimeters');
 set(gcf,'PaperPosition',[0,0,page_width,page_height]);
 yyaxis left
 ax = gca;
-set(ax,'YColor','k')
+set(ax,'YColor','k');
+set(ax,'TickLabelInterpreter','latex','FontSize',12)
 % matlab saving syntax
-saveas(gcf,fullfile(abs_data_path,'lj38_fi_pathcosts_ngtblock_t015'),'epsc')
-saveas(gcf,fullfile(abs_data_path,'lj38_fi_pathcosts_ngtblock_t015'),'png')
+saveas(gcf,fullfile(abs_data_path,'lj38_fi_pathcosts_ngtblock'),'epsc')
+saveas(gcf,fullfile(abs_data_path,'lj38_fi_pathcosts_ngtblock'),'png')
