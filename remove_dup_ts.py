@@ -1,6 +1,7 @@
 '''
 Script to parse a "ts.data" file and (in-place) delete duplicate transitions state (i.e. TSs connecting
 the same pairs of minima). The lowest-energy TS connecting any given pair of minima is always retained.
+Dead TSs (indicated by both minima connected by the TS having the same ID) are also removed.
 
 Usage:
 python remove_dup_ts.py <ts.data file>
@@ -27,10 +28,18 @@ with open(tsd_fname,"r") as tsd_f:
         nts += 1
 
 print "Number of transition states: %i" % nts
+ndead=0
+nrpt=0
 raw_ts_ids = [i for i in range(1,nts+1)] # used to keep track of line numbers
 # construct data structure for KTN, checking for duplicate TSs
 for i, ts_conn in enumerate(ts_conns):
-    if ts_conn[0] == ts_conn[1]: continue # dead TS
+    if ts_conn[0] == ts_conn[1]: # dead TS
+        print "deleting dead TS %i " %i
+        for j, ts_idx in enumerate(raw_ts_ids[i+1:]): # ensure consistent line numbering
+            if raw_ts_ids[i+j+1] > raw_ts_ids[i]: raw_ts_ids[i+j+1] -= 1
+        subprocess.call(["sed","-i",str(raw_ts_ids[i])+"d",tsd_fname])
+        ndead+=1
+        continue
     if ts_conn[0] < ts_conn[1]: # find the lower- and higher-index nodes
         v1, v2 = ts_conn[0], ts_conn[1]
     else:
@@ -54,3 +63,7 @@ for i, ts_conn in enumerate(ts_conns):
             if raw_ts_ids[vd+j+1] > raw_ts_ids[vd]: raw_ts_ids[vd+j+1] -= 1
         # delete line (in-place) corresponding to higher-energy of the two TSs from the ts.data file
         subprocess.call(["sed","-i",str(raw_ts_ids[vd])+"d",tsd_fname])
+        nrpt+=1
+
+print "deleted %i dead TSs" % ndead
+print "deleted %i repeated TSs" % nrpt
