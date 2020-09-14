@@ -4,11 +4,14 @@
 
 import numpy as np
 from math import sqrt
-from scipy.linalg import expm
+from scipy import linalg
 
-# discrete-time stochastic transition matrix - the last state should be absorbing (no outgoing transiitons)
+# discrete-time irreducible stochastic transition matrix - the last state is considered to be the target state
 P = np.array([[0.5,0.2,0.15,0.15,0.],[0.15,0.75,0.1,0.,0.],[0.2,0.1,0.45,0.1,0.15],
               [0.05,0.,0.25,0.7,0.],[0.,0.,0.1,0.,0.9]],dtype=float)
+
+# committor probabilities when first node is initial state and last node is target state
+q = np.array([1.2480468750024063e-01,1.4062499999997560e-01,3.5156250000032622e-01,2.9296875000007163e-01,1.0000000000000000])
 
 '''
 P = np.array(
@@ -41,10 +44,34 @@ P = np.array(
     8.92304157e-01]])
 '''
 
-n = np.shape(P)[0] # number of states
+n = np.shape(P)[0] # number of states (nodes)
 
-for i in range(n): # check row-stochasticity
+for i in range(n): # check row-stochasticity of transition matrix
     assert abs(np.sum(P[i,:])-1.) < 1.E-08
+for i in range(n-1): # check first step relation for committor probabilities for non-target nodes
+    q_nbr = 0.
+    for j in range(n):
+        if j==0: continue
+        q_nbr += P[i,j]*q[j]
+    assert abs(q[i]-q_nbr)<1.E-07
+
+Pr = np.zeros((n,n)) # stochastic matrix for transition process (reactive portion of trajectories)
+Pn = np.zeros((n,n)) # for nonreactive process (here, the final node is a dummy node introduced to ensure that the nonreactive traj terminates)
+for i in range(n-1):
+    for j in range(n):
+        if j==0:
+            Pr[i,j] = 0.
+        else:
+            Pr[i,j] = P[i,j]*q[j]/q[i] # here, q_i for i=initial node should satisfy first step relation
+        qi=q[i]; qj=q[j]
+        if i==0: qi=0.
+        if j==0: qj=0.
+        if j!=n-1:
+            Pn[i,j] = P[i,j]*(1.-qj)/(1.-qi)
+        elif i==0:
+            Pn[i,j] = q[i]
+Pr[-1,-1] = 1.
+Pn[-1,-1] = 1.
 
 Q = P[:-1,:-1] # substochastic matrix of nonabsorbing states (i.e. Q-matrix of transition matrix in canonical form)
 tau = 0.05 # lag time of DTMC
@@ -56,23 +83,32 @@ tau = 0.05 # lag time of DTMC
     the process starts in node i, so the row sums are equal to the no. of steps prior to absorption when starting in state i'''
 
 M = np.eye(n-1,dtype=float)-Q # Markovian kernel
-
 N = np.linalg.inv(M) # fundamental matrix of absorbing Markov chain
 Nvar = np.dot(N,2.*np.diag(np.diagonal(N))-np.eye(n-1))-(N*N)
-H = np.dot(N-np.eye(n-1),np.diag(np.array([1./x for x in np.diagonal(N)])))
+H = np.dot(N-np.eye(n-1),np.diag([1./x for x in np.diagonal(N)])) # visitation probabilities along first passage paths
+Nr = np.linalg.inv(np.eye(n-1)-Pr[:-1,:-1]) # expected numbers of node visits along transition (reactive) paths
+Nn = np.linalg.inv(np.eye(n-1)-Pn[:-1,:-1]) # expected numbers of node visits along nonreactive paths
+Eta = np.dot(Nr-np.eye(n-1),np.diag([1./x for x in np.diagonal(Nr)])) # visitation probabilities along transition (reactive) paths
+Etn = np.dot(Nn-np.eye(n-1),np.diag([1./x for x in np.diagonal(Nn)])) # visitation probabilities along nonreactive paths
 
 l = np.dot(N,np.ones(n-1)) # vector of expected path lengths
 lvar =  np.dot((2.*N)-np.eye(n-1),l)-(l*l)  # vector of variances associated with MFPTs
 
 print "\ndiscrete-time transition probability matrix:\n", P
+print "\nstochastic matrix for reactive process:\n", Pr
+print "\nstochastic matrix for nonreactive process:\n", Pn
 print "\nfundamental matrix of absorbing chain (mean numbers of node visits):\n", N
 print "\nvariances in numbers of node visits:\n", Nvar
 print "\nvisitation probability matrix:\n", H
+print "\nmean numbers of node visits for reactive paths:\n", Nr
+print "\nreactive visitation probability matrix:\n", Eta
+print "\nmean numbers of node visits for nonreactive paths:\n", Nn
+print "\nnonreactive visitation probability matrix:\n", Etn
+
 print "\n"
 for i in range(n-1):
     print "expected time to absorption (MFPT) / variance thereof, when starting in state %i:    %.6f   /   %.6f" \
         % (i+1,l[i]*tau,lvar[i]*tau)
-
 
 ### EIGENDECOMPOSITION OF DISCRETE-TIME CHAIN
 
@@ -146,10 +182,19 @@ MFPT_A = np.dot(np.eye(n)-A+np.dot(np.ones((n,n)),np.diag(np.diagonal(A))),D) # 
 
 for i in range(n-1): assert abs(MFPT_A[i,-1]-l[i])<1.E-07 # check consistency with absorbing formulation for transitions to final node
 for mfptz, mfpta in zip(MFPT_Z.flatten(),MFPT_A.flatten()): assert abs(mfptz-mfpta)<1.E-07 # element-wise and single-line methods should give same answer
+# check first step relation for MFPTs
+MFPT_fsr = np.ones((n,n))
+for i in range(n):
+    for j in range(n):
+        for k in range(n):
+            if k==j: continue
+            MFPT_fsr[i,j] += P[i,k]*MFPT_A[k,j]
+for mfpt_fsr, mfpta in zip(MFPT_fsr.flatten(),MFPT_A.flatten()): assert abs(mfpt_fsr-mfpta)<1.E-07
 
 zeta_P = 1.+np.sum([1./(1.-evals[k]) for k in range(1,n)]) # Kemeny constant from DTMC
 zeta_K = np.sum([abs(tau/np.log(evals[k])) for k in range(1,n)]) # Kemeny constant from CTMC
 assert abs(zeta_P-np.trace(Z))<1.E-07
+#assert abs(zeta_P-zeta_K)<1.E-07
 # Kemeny constant can be written as a weighted sum of MFPTs to target nodes (choice of initial node is arbitrary)
 for i in range(n): assert abs(np.dot(pi,MFPT_A[i,:])-np.trace(Z))<1.E-07
 print "\nthe Kemeny constant is constant for the MFPT matrix computed from eigenspectrum, but value does not match Tr(Z) - eigenvectors not normalised properly?"
@@ -162,17 +207,33 @@ Var_A += np.dot(np.dot(MFPT_A,np.diag(pi)),Mvd)
 Var_A = Var_A-(MFPT_A*MFPT_A) # variances in FPT distributions for transitions between all pairs of nodes (i,j)
 for i in range(n-1): assert abs(Var_A[i,-1]-lvar[i])<1.E-07 # check consistency with absorbing formulation for transitions to final node
 
-print "\ngroup inverse matrix:\n", A
-print "\nKemeny constant:", np.trace(A)+1., zeta_K
+print "\ngroup inverse (aka deviation) matrix:\n", A
+print "\nKemeny constant:", np.trace(A)+1.
 print "\nmatrix of MFPTs (from group inverse):\n", MFPT_A*tau
 print "\nvariances of FPT distribution (from group inverse):\n", Var_A*tau
 
 # COMPUTE CONTINUOUS-TIME MARKOV CHAIN AND ANALOGOUS QUANTITIES TO THOSE GIVEN ABOVE
 
-print "\nthis doesnt give a valid transition rate matrix?"
-print (MFPT_A-np.diag(np.diagonal(MFPT_A)))*tau
-K = np.dot(np.linalg.inv((MFPT_A-np.diag(np.diagonal(MFPT_A)))*tau),D-np.ones((n,n))) # transition rate matrix
-for i in range(n): print abs(np.sum(K[i,:])) # should be zero since k_jj = -\sum_{\gamma \noteq j} k_{\gamma j}
+MFPT_A_ctmc = (MFPT_A-np.diag(np.diagonal(MFPT_A)))*tau # MFPT matrix in continuous-time
+print "\nMFPT_A_ctmc:\n", MFPT_A_ctmc
+K = np.dot(np.linalg.inv(MFPT_A_ctmc),D-np.ones((n,n))) # transition rate matrix
+
+#pi_arr = np.outer(pi,np.ones(n))
+#K = pi_arr-np.linalg.inv(pi_arr-np.dot(np.dot(np.diag(pi),MFPT_A_ctmc),np.eye(n)-pi_arr))
+
+print "\n"
+for i in range(n): print "rate matrix sum of row:", i, np.sum(K[i,:])
 
 print "\ntransition rate matrix:\n", K
-print "\nrecovered transition probability matrix:\n", expm(K*tau)
+T_rew = linalg.expm(K*tau)
+print "\nrecovered transition probability matrix:\n", T_rew
+
+#pi_mfpt = np.dot(np.diag(pi),MFPT_A)
+#T_new = np.dot(np.linalg.inv(np.eye(n)-pi_mfpt),pi_arr-pi_mfpt)
+#print "\nrecovered stochastic matrix:\n", T_new
+
+'''
+print "\ntest:\n", (np.dot(MFPT_A,pi)-1.)*tau
+print "\nshould be identical to:\n", (np.dot(P,np.dot(MFPT_A,pi))-1.)*tau
+print "\ntest 2:\n", np.dot(MFPT_A_ctmc,pi)
+'''
