@@ -7,8 +7,8 @@ K = np.array([[-5.,2.0,2.0,1.0],
               [0.5,0.5,1.0,-2.]])
 n = np.shape(K)[0]
 
-evals, revecs = np.linalg.eig(K.T)
-pi = revecs[:,0]/np.sum(revecs[:,0])
+evals_K, revecs_K = np.linalg.eig(K.T)
+pi = revecs_K[:,0]/np.sum(revecs_K[:,0])
 D = np.diag([1./pi[i] for i in range(n)])
 
 for i in range(n): assert abs(np.dot(pi,K)[i])<1.E-08
@@ -20,6 +20,8 @@ MFPT = np.zeros((n,n))
 for i in range(n):
     for j in range(n):
         MFPT[i,j] = (1./pi[j])*(Z[j,j]-Z[i,j])
+for i in range(n): assert abs(np.dot(pi,MFPT[i,:])-np.trace(Z))<1.E-08 # check alt definition of Kemeny constant
+assert abs((np.sum([1./abs(x) for x in evals_K[1:]]))-np.trace(Z))<1.E-08 # Kemeny constant from CTMC eigenvalues
 # check np.dot(MFPT,pi) is a left eigenvector of the transition rate matrix associated with eigenvalue equal to zero
 kp = np.dot(K,np.dot(MFPT,pi))
 for i in range(n): assert abs(kp[i])<1.E-08
@@ -35,13 +37,15 @@ print "\nMFPT matrix from CTMC:\n", MFPT
 tau = 0.05 # lag time
 T = linalg.expm(K*tau) # discrete-time transition probability matrix
 print "\ntransition probability matrix:\n", T
-evals, revecs = np.linalg.eig(T.T)
-piT = revecs[:,0]/np.sum(revecs[:,0])
+evals_T, revecs_T = np.linalg.eig(T.T)
+piT = revecs_T[:,0]/np.sum(revecs_T[:,0])
 for i in range(n): assert abs(piT[i]-pi[i])<1.E-08 # check stationary distribution is identical to CTMC result
 
 ZT = np.linalg.inv(np.eye(n)-T+np.outer(np.ones(n),pi)) # Kemeny and Snell's fundamental matrix
 MFPT_T = np.dot(np.eye(n)-ZT+np.dot(np.ones((n,n)),np.diag(np.diagonal(ZT))),D)
 for i in range(n): assert abs(np.dot(pi,MFPT_T[i,:])-np.trace(ZT))<1.E-08 # check alt definition of Kemeny constant (in terms of MFPT matrix and stat distribn)
+assert abs((1.+np.sum([1./(1.-x) for x in evals_T[1:]]))-np.trace(ZT))<1.E-08 # Kemeny constant from DTMC eigenvalues
+MFPT_nodiag = MFPT_T-np.diag(np.diagonal(MFPT_T))
 # check np.dot(MFPT_T,pi) is a left eigenvector of the transition probability matrix associated with eigenvalue equal to unity
 tp1 = np.dot(MFPT_T,pi)
 tp2 = np.dot(T,np.dot(MFPT_T,pi))
@@ -70,6 +74,12 @@ print "\nBranching matrix from original rate matrix:\n", BK
 print "\nBranching matrix from recovered rate matrix:\n", BT
 
 # recover transition probability matrix from MFPTs
-T1 = np.dot(np.linalg.inv(np.eye(n)-np.dot(MFPT_T,np.diag(pi))),np.outer(np.ones(n),pi)-np.dot(MFPT_T,np.diag(pi)))
+T1 = np.dot(np.outer(np.ones(n),pi)-np.dot(MFPT_T,np.diag(pi)),np.linalg.inv(np.eye(n)-np.dot(MFPT_T,np.diag(pi))))
 for i in range(n): assert abs(np.sum(T1[i,:])-1.)<1.E-08 # check row-stochasticity
+for t1_elem, t_elem in zip(T1.flatten(),T.flatten()): assert abs(t1_elem-t_elem)<1.E-08
 print "\nT1:\n", T1
+pi_arr = np.outer(np.ones(n),pi)
+DT_arr = np.dot((MFPT/tau)+D,np.diag(pi)) # could instead use MFPT_T to get back expm(K*tau). As shown, parameterise a DTMC at lag time tau
+T2 = np.eye(n)+pi_arr-np.linalg.inv(np.eye(n)-DT_arr+np.dot(pi_arr,DT_arr)) # alternative expression
+for i in range(n): assert abs(np.sum(T1[i,:])-1.)<1.E-08
+print "\nT2:\n", T2
