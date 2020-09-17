@@ -1,19 +1,45 @@
 import numpy as np
 from scipy import linalg
+from math import sqrt
 
+'''
+# note: this rate matrix satisfies global, but not detailed, balance
 K = np.array([[-5.,2.0,2.0,1.0],
               [1.5,-6.,1.5,3.0],
               [3.0,4.0,-9.,2.0],
               [0.5,0.5,1.0,-2.]])
+tau = 0.05 # lag time
+'''
+
+#'''
+# note: this rate matrix satisfies detailed balance
+K = np.array([[-0.142479765469,  0.082084998624,    0.030197383422,  0.030197383422,  0.            ],
+              [ 0.367879441171,  -0.59100960132,    0.223130160148,  0.,              0.            ],
+              [ 0.082084998624,  0.135335283237,   -0.225593824737,  0.004086771438,  0.004086771438],
+              [ 0.367879441171,  0.            ,    0.018315638889, -0.38619508006,   0.            ],
+              [ 0.,              0.,                0.082084998624,  0.,             -0.082084998624]])
+tau = 5. # lag time
+#'''
+
 n = np.shape(K)[0]
 
 evals_K, revecs_K = np.linalg.eig(K.T)
-pi = revecs_K[:,0]/np.sum(revecs_K[:,0])
+idx = evals_K.argsort()[-1]
+pi = revecs_K[:,idx]/np.sum(revecs_K[:,idx])
+evals_K = evals_K[evals_K.argsort()[::-1]]
 D = np.diag([1./pi[i] for i in range(n)])
 
-for i in range(n): assert abs(np.dot(pi,K)[i])<1.E-08
+assert abs(np.sum(pi)-1.)<1.E-08
+for i in range(n): assert abs(np.dot(pi,K)[i])<1.E-08 # check global balance condition
 print "\ntransition rate matrix:\n", K
 print "\nstationary distribution:\n", pi
+print "\neigenvalues:\n", evals_K
+
+reversible=True
+for i in range(n):
+    for j in range(n):
+        if abs((K[i,j]*pi[i])-(K[j,i]*pi[j]))>1.E-08: reversible=False
+print "\ndetailed balance condition satisifed?", reversible
 
 Z = np.linalg.inv(np.outer(np.ones(n),pi)-K)-np.outer(np.ones(n),pi) # fundamental matrix (some freedom in choice, here gives Kemeny constant directly as trace)
 MFPT = np.zeros((n,n))
@@ -34,12 +60,13 @@ print "\nMFPT matrix from CTMC:\n", MFPT
 
 ### DISCRETE-TIME MARKOV CHAIN
 
-tau = 0.05 # lag time
 T = linalg.expm(K*tau) # discrete-time transition probability matrix
-print "\ntransition probability matrix:\n", T
 evals_T, revecs_T = np.linalg.eig(T.T)
-piT = revecs_T[:,0]/np.sum(revecs_T[:,0])
+idx = evals_T.argsort()[-1]
+piT = revecs_T[:,idx]/np.sum(revecs_T[:,idx])
+evals_T = evals_T[evals_T.argsort()[::-1]]
 for i in range(n): assert abs(piT[i]-pi[i])<1.E-08 # check stationary distribution is identical to CTMC result
+print "\ntransition probability matrix:\n", T
 
 ZT = np.linalg.inv(np.eye(n)-T+np.outer(np.ones(n),pi)) # Kemeny and Snell's fundamental matrix
 MFPT_T = np.dot(np.eye(n)-ZT+np.dot(np.ones((n,n)),np.diag(np.diagonal(ZT))),D)
@@ -78,8 +105,37 @@ T1 = np.dot(np.outer(np.ones(n),pi)-np.dot(MFPT_T,np.diag(pi)),np.linalg.inv(np.
 for i in range(n): assert abs(np.sum(T1[i,:])-1.)<1.E-08 # check row-stochasticity
 for t1_elem, t_elem in zip(T1.flatten(),T.flatten()): assert abs(t1_elem-t_elem)<1.E-08
 print "\nT1:\n", T1
+'''
 pi_arr = np.outer(np.ones(n),pi)
 DT_arr = np.dot((MFPT/tau)+D,np.diag(pi)) # could instead use MFPT_T to get back expm(K*tau). As shown, parameterise a DTMC at lag time tau
 T2 = np.eye(n)+pi_arr-np.linalg.inv(np.eye(n)-DT_arr+np.dot(pi_arr,DT_arr)) # alternative expression
-for i in range(n): assert abs(np.sum(T1[i,:])-1.)<1.E-08
+for i in range(n): assert abs(np.sum(T2[i,:])-1.)<1.E-08
 print "\nT2:\n", T2
+'''
+
+dS = np.zeros((n,n),dtype=float) # matrix of entropy flow along edges (as multiple of Boltzmann constant)
+for i in range(n):
+    for j in range(i+1,n):
+        if K[i,j]==0. and K[j,i]==0.: continue # nodes are not connected in either direction
+        dS[i,j] = -np.log(K[i,j]/K[j,i])
+        dS[j,i] = -np.log(K[j,i]/K[i,j])
+print "\nentropy flow matrix:\n", dS
+
+if not reversible: quit()
+''' define the symmetrized rate matrix. Note that the symmetrized form does not have rows that sum to zero;
+    nonetheless, the symmetrized rate matrix has the same eigenvalues as the original rate matrix '''
+K_sym = np.zeros((n,n),dtype=float)+np.diag(np.diagonal(K))
+for i in range(n):
+    for j in range(n):
+        if i==j: continue
+        K_sym[i,j] = sqrt(pi[i]/pi[j])*K[i,j]
+evals_sym, evecs_sym = np.linalg.eig(K_sym.T)
+evecs_sym = np.array([evecs_sym[:,i] for i in evals_sym.argsort()[::-1]])
+evals_sym = evals_sym[evals_sym.argsort()[::-1]]
+for i in range(n): assert abs(evals_sym[i]-evals_K[i])<1.E-08 # symmetrised and original rate matrices have same eigenvalues
+for i in range(n): assert abs((pi[i]/sqrt(pi[i]))-evecs_sym[0,i])<1.E-08 # test relation for right eigenvector of reversible stochastic matrix on first eigvec
+for i in range(n): assert abs((1.*sqrt(pi[i]))-evecs_sym[0,i])<1.E-08 # test relation for left eigevector of reversible stochastic matrix on first eigvec
+for i in range(n): # eigenvectors of symmetrised rate matrix are orthonormal
+    for j in range(n):
+        assert abs(np.dot(evecs_sym[i,:],evecs_sym[j,:])-(lambda i,j: 1. if i==j else 0.)(i,j))<1.E-08
+print "\neigenvectors of symmetrised rate matrix:\n", evecs_sym
