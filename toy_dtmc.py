@@ -2,13 +2,14 @@
     both irreducible and absorbing Markov chains), starting from a discrete-time Markov chain and also showing
     the continuous-time case'''
 
+from __future__ import print_function
 import numpy as np
 from math import sqrt
 from scipy import linalg
 
 ### SETUP AND BASIC CHECKS OF INITIAL DISCRETE-TIME MARKOV CHAIN
 
-'''
+#'''
 # discrete-time irreducible stochastic transition matrix - the last state is considered to be the target state
 # note: this stochastic matrix satisfies global, but not detailed, balance
 P = np.array([[0.50,0.20,0.15,0.15,0.00],
@@ -19,9 +20,9 @@ P = np.array([[0.50,0.20,0.15,0.15,0.00],
 # committor probabilities when first node is initial state and last node is target state
 q = np.array([1.2480468750024063e-01,1.4062499999997560e-01,3.5156250000032622e-01,2.9296875000007163e-01,1.0000000000000000])
 tau = 0.05 # lag time of DTMC
-'''
-
 #'''
+
+'''
 # note: this stochastic matrix satisfies detailed balance
 P = np.array([[0.689622064025,  0.120415338886,  0.137060624417,  0.051559295782,   0.001342676891],
               [0.539664108186,  0.167800224012,  0.256339627614,  0.032624562996,   0.003571477191],
@@ -30,7 +31,7 @@ P = np.array([[0.689622064025,  0.120415338886,  0.137060624417,  0.051559295782
               [0.073307674326,  0.043509499312,  0.213454999903,  0.004028644016,   0.665699182443]])
 q = np.array([0.00602639465359,0.011354684274,0.022282345176,0.005089430731,1.000000000000])
 tau = 5.
-#'''
+'''
 
 n = np.shape(P)[0] # number of states (nodes)
 
@@ -82,24 +83,24 @@ Etn = np.dot(Nn-np.eye(n-1),np.diag([1./x for x in np.diagonal(Nn)])) # visitati
 l = np.dot(N,np.ones(n-1)) # vector of expected path lengths
 lvar =  np.dot((2.*N)-np.eye(n-1),l)-(l*l)  # vector of variances associated with MFPTs
 
-print "\ndiscrete-time transition probability matrix:\n", P
-print "\nstochastic matrix for reactive process:\n", Pr
-print "\nstochastic matrix for nonreactive process:\n", Pn
-print "\nfundamental matrix of absorbing chain (mean numbers of node visits):\n", N
-print "\nvariances in numbers of node visits:\n", Nvar
-print "\nvisitation probability matrix:\n", H
-print "\nmean numbers of node visits for reactive paths:\n", Nr
-print "\nreactive visitation probability matrix:\n", Eta
-print "\nmean numbers of node visits for nonreactive paths:\n", Nn
-print "\nnonreactive visitation probability matrix:\n", Etn
+print("\ndiscrete-time transition probability matrix:\n",P)
+print("\nstochastic matrix for reactive process:\n",Pr)
+print("\nstochastic matrix for nonreactive process:\n",Pn)
+print("\nfundamental matrix of absorbing chain (mean numbers of node visits):\n",N)
+print("\nvariances in numbers of node visits:\n",Nvar)
+print("\nvisitation probability matrix:\n",H)
+print("\nmean numbers of node visits for reactive paths:\n",Nr)
+print("\nreactive visitation probability matrix:\n",Eta)
+print("\nmean numbers of node visits for nonreactive paths:\n",Nn)
+print("\nnonreactive visitation probability matrix:\n",Etn)
 
-print "\n"
+print("\n")
 for i in range(n-1):
-    print "expected time to absorption (MFPT) / variance thereof, when starting in state %i:    %.6f   /   %.6f" \
-        % (i+1,l[i]*tau,lvar[i]*tau)
+    print("expected time to absorption (MFPT) / variance thereof, when starting in state %i:    %.6f   /   %.6f" \
+        % (i+1,l[i]*tau,lvar[i]*(tau**2)))
 
 
-### EIGENDECOMPOSITION OF DISCRETE-TIME CHAIN
+### EIGENDECOMPOSITION OF DISCRETE-TIME MARKOV CHAIN
 
 evals, revecs = np.linalg.eig(P.T) # calculate right eigenvectors of the irreducible stochastic matrix
 revecs = np.array([revecs[:,i] for i in evals.argsort()[::-1]])
@@ -108,60 +109,9 @@ levecs = np.array([levecs[:,i] for i in evals.argsort()[::-1]])
 evals = evals[evals.argsort()[::-1]]
 assert abs(evals[evals.argsort()[-1]]-1.)<1.E-08 # there should be a single dominant eigenvalue equal to unity
 pi = revecs[0,:]/np.sum(revecs[0,:]) # equilibrium occupation probabilities (normalised dominant right eigenvector)
+print("\nstationary distribution:\n",pi)
+print("\neigenvalues:\n",evals)
 
-# check if Markov chain satisfies the *detailed* balance condition
-reversible=True
-for i in range(n):
-    for j in range(i+1,n):
-        if abs((P[i,j]*pi[i])-(P[j,i]*pi[j]))>1.E-08: reversible=False
-
-# these factors are relevant if the Markov chain is reversible
-if reversible:
-    tmp_arr_r = np.zeros((n,n),dtype=float) # diagonal elems are normalisation factors associated with right eigenvectors
-    tmp_arr_l = np.zeros((n,n),dtype=float) # diagonal elems are normalisation factors associated with left eigenvectors
-    for i in range(n):
-        for j in range(n): 
-            for k in range(n):
-                tmp_arr_r[i,j] += revecs[i,k]*revecs[j,k]/pi[k]
-                tmp_arr_l[i,j] += levecs[i,k]*levecs[j,k]*pi[k]
-    # normalise
-    for i in range(n):
-        revecs[i,:] *= 1./sqrt(tmp_arr_r[i,i])
-        levecs[i,:] *= 1./sqrt(tmp_arr_l[i,i])
-
-print "\neigenvalues:\n", evals
-print "\nnormalised right eigenvectors:\n", revecs
-print "\nnormalised left eigenvectors:\n", levecs
-
-#'''
-# these are the orthonormality conditions in Buchete and Hummer J Phys Chem B 2008, some of which only apply if *detailed* balance is satisfied
-for i in range(n):
-#    print "i:", i+1
-    assert abs(np.sum(revecs[i,:])-(lambda i: 1. if i==0 else 0.)(i))<1.E-08
-    assert abs(abs(np.dot(pi,levecs[i,:]))-(lambda i: 1. if i==0 else 0.)(i))<1.E-08
-    for j in range(i,n):
-#        print "\tdot product of i-th levec with j-th revec:", j+1, "\t", abs(np.dot(revecs[i,:],levecs[j,:]))
-        assert abs(abs(np.dot(revecs[i,:],levecs[j,:]))-(lambda i,j: 1. if i==j else 0.)(i,j))<1.E-08
-        if not reversible or i==j: continue
-        assert abs(tmp_arr_r[i,j])<1.E-08
-        assert abs(tmp_arr_l[i,j])<1.E-08
-#        print "\t j:", j+1, "\t", tmp_arr_r[i,j], "       ", tmp_arr_l[i,j]
-#'''
-
-# compute matrix of all pairwise inter-node MFPTs from eigenspectrum
-MFPT_eig = np.zeros((n,n),dtype=float)
-for i in range(n):
-    for j in range(n):
-        for k in range(1,n):
-            MFPT_eig[i,j] += (1./pi[j])*(evals[k]/(1.-evals[k]))*revecs[j,k]*(levecs[j,k]-levecs[i,k])
-#            MFPT_eig[i,j] += -1.*(tau/(pi[j]*np.log(evals[k])))*revecs[j,k]*(levecs[j,k]-levecs[i,k])
-        MFPT_eig[i,j] += 1./pi[j]
-
-print "\neigenvalues:\n", evals
-print "\nright eigenvectors:\n", revecs
-print "\nleft eigenvectors:\n", levecs
-print "\nstationary distribution:\n", pi
-print "\nmatrix of MFPTs (from eigenspectrum):\n", MFPT_eig*tau
 
 # INVESTIGATE FUNDAMENTAL MATRIX OF IRREDUCIBLE DTMC
 
@@ -169,7 +119,7 @@ Zinv = np.eye(n)-P+np.outer(np.ones(n),pi)
 Z = np.linalg.inv(Zinv) # Kemeny and Snell's fundamental matrix. NB may have negative entries
 A = Z-np.outer(np.ones(n),pi) # Meyer's group inverse
 D = np.diag([1./pi[k] for k in range(n)])
-print "\ncondition number in matrix inversion to obtain Z:", np.linalg.cond(Zinv)
+print("\ncondition number in matrix inversion to obtain Z:",np.linalg.cond(Zinv))
 
 # element-wise computation using fundamental matrix
 MFPT_Z = np.zeros((n,n),dtype=float)
@@ -198,8 +148,6 @@ assert abs(zeta_P-np.trace(Z))<1.E-08
 #assert abs(zeta_P-zeta_K)<1.E-08
 # Kemeny constant can be written as a weighted sum of MFPTs to target nodes (choice of initial node is arbitrary)
 for i in range(n): assert abs(np.dot(pi,MFPT_A[i,:])-np.trace(Z))<1.E-08
-print "\nthe Kemeny constant is constant for the MFPT matrix computed from eigenspectrum, but value does not match Tr(Z) - eigenvectors not normalised properly?"
-for i in range(n): print np.dot(pi,MFPT_eig[i,:])
 
 Gd = np.diag(np.diagonal(np.dot(np.eye(n)-np.outer(np.ones(n),pi),A)))
 Mvd = D+(2.*np.dot(np.dot(D,Gd),D))
@@ -208,31 +156,94 @@ Var_A += np.dot(np.dot(MFPT_A,np.diag(pi)),Mvd)
 Var_A = Var_A-(MFPT_A*MFPT_A) # variances in FPT distributions for transitions between all pairs of nodes (i,j)
 for i in range(n-1): assert abs(Var_A[i,-1]-lvar[i])<2.E-05 # check consistency with absorbing formulation for transitions to final node
 
-print "\ngroup inverse (aka deviation) matrix:\n", A
-print "\nKemeny constant:", np.trace(A)+1.
-print "\nmatrix of MFPTs (from group inverse):\n", MFPT_A*tau
-print "\nvariances of FPT distribution (from group inverse):\n", Var_A*tau
+print("\ngroup inverse (aka deviation) matrix:\n",A)
+print("\nKemeny constant:",np.trace(A)*tau)
+print("\nmatrix of MFPTs (from group inverse):\n",MFPT_A*tau)
+print("\nvariances of FPT distribution (from group inverse):\n",Var_A*(tau**2))
+
 
 # COMPUTE CONTINUOUS-TIME MARKOV CHAIN AND ANALOGOUS QUANTITIES TO THOSE GIVEN ABOVE
 
 MFPT_A_ctmc = (MFPT_A-np.diag(np.diagonal(MFPT_A)))*tau # MFPT matrix in continuous-time
-print "\nMFPT_A_ctmc:\n", MFPT_A_ctmc
 K = np.dot(D-np.ones((n,n)),np.linalg.inv(MFPT_A_ctmc)) # transition rate matrix
 for i in range(n): assert abs(np.sum(K[i,:]))<1.E-08
-#pi_arr = np.outer(pi,np.ones(n))
-#K = pi_arr-np.linalg.inv(pi_arr-np.dot(np.dot(np.diag(pi),MFPT_A_ctmc),np.eye(n)-pi_arr)) # alternative expression
-
-print "\ntransition rate matrix:\n", K
+evals_K, revecs_K = np.linalg.eig(K.T)
+revecs_K = np.array([revecs_K[:,i] for i in evals_K.argsort()[::-1]])
+pi_K = revecs_K[0,:]/np.sum(revecs_K[0,:])
+for i in range(n): assert abs(pi[i]-pi_K[i])<1.E-08
 T_rew = linalg.expm(K*tau)
-print "\nrecovered transition probability matrix:\n", T_rew
+tau_vec = np.array([1./abs(K[i,i]) for i in range(n)]) # vector of mean waiting times
+B = np.zeros((n,n),dtype=float) # branching probability matrix
+for i in range(n):
+    for j in range(i+1,n):
+        B[i,j] = K[i,j]/abs(K[i,i])
+        B[j,i] = K[j,i]/abs(K[j,j])
 
-#pi_mfpt = np.dot(np.diag(pi),MFPT_A)
-#T_new = np.dot(np.linalg.inv(np.eye(n)-pi_mfpt),pi_arr-pi_mfpt)
-#print "\nrecovered stochastic matrix:\n", T_new
+print("\ntransition rate matrix:\n",K)
+print("\nrecovered transition probability matrix:\n",T_rew) # NB is not necessary same as transition probability matrix for original DTMC
 
-'''
-print "\ntest:\n", (np.dot(MFPT_A,pi)-1.)*tau
-print "\nshould be identical to:\n", (np.dot(P,np.dot(MFPT_A,pi))-1.)*tau
-print "\ntest 2:\n", np.dot(MFPT_A_ctmc,pi)
-'''
+NK = np.linalg.inv(np.eye((n-1),dtype=float)-B[:-1,:-1]) # fundamental matrix of absorbing CTMC
+MFPT_NK = np.dot(NK,tau_vec[:-1]) # MFPTs for transitions to final state in CTMC
+NKvar = np.dot(NK,2.*np.diag(np.diagonal(NK))-np.eye(n-1))-(NK*NK) # variances in number of node visits
+#tau_var = np.tile(tau_vec[:-1]*tau_vec[:-1],n-1).reshape((n-1,n-1)) # variance of exp distribn is square of mean
+#Xvar = (NK*NK*tau_var)+(tau_var*NKvar)+(tau_var*NKvar)
+#Var_NK = np.dot(Xvar,np.ones(n-1))
+Var_NK = np.dot(NKvar,(tau_vec[:-1]*tau_vec[:-1]))
 
+ZK = np.linalg.inv(np.outer(np.ones(n),pi)-K)-np.outer(np.ones(n),pi) # fundamental matrix of irreducible CTMC
+MFPT_ZK = np.dot(np.eye(n)-ZK+np.dot(np.ones((n,n)),np.diag(np.diagonal(ZK))),D)
+for i in range(n-1): assert abs(MFPT_NK[i]-MFPT_ZK[i,-1])<1.E-08
+
+print("\nMFPTs for CTMC:\n",MFPT_ZK) # MFPTs for CTMC should be the same as for DTMC from which CTMC was derived
+print("\nNK:\n",NK,"\nNKvar:\n",NKvar)
+#print("\nXvar:\n",Xvar)
+print("\nvariances of FPT distribution for CTMC:\n",Var_NK)
+print("\nKemeny constant for CTMC:\n",np.trace(ZK))
+
+# check if Markov chain satisfies the *detailed* balance condition
+reversible=True
+for i in range(n):
+    for j in range(i+1,n):
+        if abs((P[i,j]*pi[i])-(P[j,i]*pi[j]))>1.E-08: reversible=False
+if not reversible: quit()
+
+### FOR A REVERSIBLE MARKOV CHAIN, COMPUTE NORMALIZED EIGENVECTORS AND COMPUTE MFPT FROM EIGENSPECTRUM
+
+tmp_arr_r = np.zeros((n,n),dtype=float) # diagonal elems are normalisation factors associated with right eigenvectors
+tmp_arr_l = np.zeros((n,n),dtype=float) # diagonal elems are normalisation factors associated with left eigenvectors
+for i in range(n):
+    for j in range(n):
+        for k in range(n):
+            tmp_arr_r[i,j] += revecs[i,k]*revecs[j,k]/pi[k]
+            tmp_arr_l[i,j] += levecs[i,k]*levecs[j,k]*pi[k]
+# normalise
+for i in range(n):
+    revecs[i,:] *= 1./sqrt(tmp_arr_r[i,i])
+    levecs[i,:] *= 1./sqrt(tmp_arr_l[i,i])
+
+# these are the orthonormality conditions in Buchete and Hummer J Phys Chem B 2008, some of which only apply if *detailed* balance is satisfied
+for i in range(n):
+#    print("i:",i+1)
+    assert abs(np.sum(revecs[i,:])-(lambda i: 1. if i==0 else 0.)(i))<1.E-08
+    assert abs(abs(np.dot(pi,levecs[i,:]))-(lambda i: 1. if i==0 else 0.)(i))<1.E-08
+    for j in range(i,n):
+#        print("\tdot product of i-th levec with j-th revec:", j+1, "\t", abs(np.dot(revecs[i,:],levecs[j,:])))
+        assert abs(abs(np.dot(revecs[i,:],levecs[j,:]))-(lambda i,j: 1. if i==j else 0.)(i,j))<1.E-08
+        if not reversible or i==j: continue
+        assert abs(tmp_arr_r[i,j])<1.E-08
+        assert abs(tmp_arr_l[i,j])<1.E-08
+#        print("\t j:", j+1, "\t", tmp_arr_r[i,j], "       ", tmp_arr_l[i,j])
+
+# compute matrix of all pairwise inter-node MFPTs from eigenspectrum
+MFPT_eig = np.zeros((n,n),dtype=float)
+for i in range(n):
+    for j in range(n):
+        for k in range(1,n):
+            MFPT_eig[i,j] += (1./pi[j])*(evals[k]/(1.-evals[k]))*revecs[j,k]*(levecs[j,k]-levecs[i,k])
+#            MFPT_eig[i,j] += -1.*(tau/(pi[j]*np.log(evals[k])))*revecs[j,k]*(levecs[j,k]-levecs[i,k])
+        MFPT_eig[i,j] += 1./pi[j]
+for i in range(n): assert abs(np.dot(pi,MFPT_eig[i,:])-np.trace(Z))<1.E-08
+
+print("\nnormalized right eigenvectors:\n",revecs)
+print("\nnormalized left eigenvectors:\n",levecs)
+print("\nmatrix of MFPTs (from eigenspectrum):\n",MFPT_eig*tau)

@@ -51,25 +51,41 @@ pi = revecs_T[:,idx]/np.sum(revecs_T[:,idx]) # stationary distribution
 for i in range(n): assert abs(np.dot(pi,K)[i])<1.E-08
 for i in range(n): assert abs(np.dot(pi,T)[i]-pi[i])<1.E-08
 
+
+# an example problem to print
+T=np.array([[ 0.5,   0.2,   0.15,  0.15,  0.  ],
+            [ 0.15,  0.75,  0.1,   0.,    0.  ],
+            [ 0.2,   0.1,   0.45,  0.1,   0.15],
+            [ 0.05,  0.,    0.25,  0.7,   0.  ],
+            [ 0.,    0.,    0.1,   0.,    0.9 ]])
+
+K=np.array([[-10.,   4.,   3.,   3.,   0.],
+            [  3.,  -5.,   2.,   0.,   0.],
+            [  4.,   2., -11.,   2.,   3.],
+            [  1.,   0.,   5.,  -6.,   0.],
+            [  0.,   0.,   2.,   0.,  -2.]]) 
+
+pi=np.array([0.15506773,0.20364316,0.19897244,0.14385801,0.29845866])
+n = np.shape(T)[0]
+
+
 # print DISCOTRESS input files for CTMC and DTMC
-ts_wts_ctmc = open("ts_weights_ctmc.dat","w")
-ts_conns_ctmc = open("ts_conns_ctmc.dat","w")
-ts_wts_dtmc = open("ts_weights_dtmc.dat","w")
-ts_conns_dtmc = open("ts_conns_dtmc.dat","w")
+edge_weights_ctmc = open("edge_weights_ctmc.dat","w")
+edge_conns_ctmc = open("edge_conns_ctmc.dat","w")
+edge_weights_dtmc = open("edge_weights_dtmc.dat","w")
+edge_conns_dtmc = open("edge_conns_dtmc.dat","w")
 stat_prob_f = open("stat_prob.dat","w")
 for i in range(n):
     stat_prob_f.write("%1.15f\n" % np.log(pi[i]))
     for j in range(i+1,n):
         if K[i,j]!=0.:
-            ts_wts_ctmc.write("%1.15f\n" % np.log(K[i,j]))
-            ts_wts_ctmc.write("%1.15f\n" % np.log(K[j,i]))
-            ts_conns_ctmc.write("%4i %4i\n" % (i+1,j+1))
+            edge_weights_ctmc.write("%1.15f  %1.15f\n" % (np.log(K[i,j]),np.log(K[j,i])))
+            edge_conns_ctmc.write("%4i %4i\n" % (i+1,j+1))
         if T[i,j]!=0.:
-            ts_wts_dtmc.write("%1.15f\n" % T[i,j])
-            ts_wts_dtmc.write("%1.15f\n" % T[j,i])
-            ts_conns_dtmc.write("%4i %4i\n" % (i+1,j+1))
-ts_wts_ctmc.close()
-ts_conns_ctmc.close()
-ts_wts_dtmc.close()
-ts_conns_dtmc.close()
+            edge_weights_dtmc.write("%1.15f  %1.15f\n" % (T[i,j],T[j,i]))
+            edge_conns_dtmc.write("%4i %4i\n" % (i+1,j+1))
+edge_weights_ctmc.close()
+edge_conns_ctmc.close()
+edge_weights_dtmc.close()
+edge_conns_dtmc.close()
 stat_prob_f.close()

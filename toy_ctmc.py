@@ -9,7 +9,7 @@ K = np.array([[-5.,2.0,2.0,1.0],
               [1.5,-6.,1.5,3.0],
               [3.0,4.0,-9.,2.0],
               [0.5,0.5,1.0,-2.]])
-tau = 0.05 # lag time
+tau = 5.E-03 # lag time
 #'''
 
 '''
@@ -74,7 +74,7 @@ print("\ntransition probability matrix:\n",T)
 ZT = np.linalg.inv(np.eye(n)-T+np.outer(np.ones(n),pi)) # Kemeny and Snell's fundamental matrix
 MFPT_T = np.dot(np.eye(n)-ZT+np.dot(np.ones((n,n)),np.diag(np.diagonal(ZT))),D) # note MFPT matrix for DTMC has non-zero diagonal elems
 for i in range(n): assert abs(np.dot(pi,MFPT_T[i,:])-np.trace(ZT))<1.E-08 # check alt definition of Kemeny constant (in terms of MFPT matrix and stat distribn)
-assert abs((1.+np.sum([1./(1.-x) for x in evals_T[1:]]))-np.trace(ZT))<1.E-08 # Kemeny constant from DTMC eigenvalues
+#assert abs((1.+np.sum([1./(1.-x) for x in evals_T[1:]]))-np.trace(ZT))<1.E-08 # Kemeny constant from DTMC eigenvalues
 # check np.dot(MFPT_T,pi) is a left eigenvector of the transition probability matrix associated with eigenvalue equal to unity
 tp1 = np.dot(MFPT_T,pi)
 tp2 = np.dot(T,np.dot(MFPT_T,pi))
@@ -102,8 +102,6 @@ TK = np.dot(pi_arr-pi_mfpt,np.linalg.inv(np.eye(n)-pi_mfpt))
 print("\ntransition probability matrix from CTMC MFPTs:\n",TK)
 for i in range(n): assert abs(np.sum(TK[i,:])-1.)<1.E-08 # check row-stochasticity
 #for tk_elem, t_elem in zip(TK.flatten(),T.flatten()): assert abs(tk_elem-t_elem)<1.E-08
-quit()
-
 
 # BRANCHING PROBABILITY MATRICES
 
