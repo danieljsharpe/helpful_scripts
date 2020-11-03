@@ -15,7 +15,7 @@ T = np.array([[0.50, 0.20, 0.15, 0.15, 0.00],
 b=4 # ID of initial node (indexed from 1)
 a=5 # ID of target (absorbing) node (indexed from 1)
 
-seed=19 # seed for random number generator
+seed=23 # seed for random number generator
 
 npaths = 100000 # no. of paths to simulate
 
