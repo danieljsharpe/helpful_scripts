@@ -5,7 +5,6 @@ Python script to perform kMC for a given DTMC with associated reward values for 
 from __future__ import print_function
 import numpy as np
 
-'''
 # transition probability matrix
 T = np.array([[0.50, 0.20, 0.15, 0.15, 0.00],
               [0.15, 0.75, 0.10, 0.00, 0.00],
@@ -13,61 +12,47 @@ T = np.array([[0.50, 0.20, 0.15, 0.15, 0.00],
               [0.05, 0.00, 0.25, 0.70, 0.00],
               [0.00, 0.00, 0.10, 0.00, 0.90]])
 
-# reward matrix
-R =  np.array([[ 0.0000000000, -0.2876820725,  0.2876820725, -1.098612289,  0.0000000000],
-               [ 0.2876820725,  0.0000000000,  0.0000000000,  0.000000000,  0.0000000000],
-               [-0.2876820725,  0.0000000000,  0.0000000000,  0.916290732, -0.4054651081],
-               [ 1.0986122890,  0.0000000000, -0.9162907319,  0.000000000,  0.0000000000],
-               [ 0.0000000000,  0.0000000000,  0.4054651081,  0.000000000,  0.0000000000]])
-'''
-
-'''
-# renormalised network after eliminating node 1 of original chain
-T = np.array([[0.810, 0.145, 0.045, 0.000],
-              [0.180, 0.510, 0.160, 0.150],
-              [0.020, 0.265, 0.715, 0.000],
-              [0.000, 0.100, 0.000, 0.900]])
-
-R = np.array([[ 0.0000000000,  0.178561284 , -0.8109302165,  0.0000000000],
-              [-0.2557174   ,  0.0000000000,  0.05282132  , -0.4054651081],
-              [ 0.8109302165, -0.785955730 ,  0.0000000000,  0.0000000000],
-              [ 0.0000000000,  0.4054651081,  0.0000000000,  0.0000000000]])
-'''
-
-# renormalised network after eliminating node 2 of original chain
-T = np.array([[0.64736842105, 0.2026315789, 0.15],
-              [0.28026315789, 0.7197368421, 0.00],
-              [0.10         , 0.00        , 0.90]])
-
-R = np.array([[-0.01637209  , -0.18270332, -0.4054651081],
-              [-0.68926471  ,  0.00000000,  0.0000000000],
-              [ 0.4054651081,  0.00000000,  0.0000000000]])
-
+b=4 # ID of initial node (indexed from 1)
+a=5 # ID of target (absorbing) node (indexed from 1)
 
 seed=19 # seed for random number generator
-
-b=2 # ID of initial node (indexed from 1)
-a=3 # ID of target (absorbing) node
 
 npaths = 100000 # no. of paths to simulate
 
 tau=0.05 # lag time
 
+# various reward matrices
+n = np.shape(T)[0] # number of nodes
+# time
+Rt = (np.repeat(tau,n*n)).reshape((n,n))
+# entropy flow
+Rs = np.zeros((n,n),dtype=float)
+for i in range(n):
+    for j in range(i,n):
+        if i==j or T[i,j]==0.: continue # assuming all edges are bidirectional
+        Rs[i,j] = -np.log(T[i,j]/T[j,i])
+        Rs[j,i] = -np.log(T[j,i]/T[i,j])
+# path action
+Rp = -1.*np.log(T.flatten())
+nan_idx = np.argwhere(np.isinf(Rp))
+Rp[nan_idx] = 0.
+# gather reward matrices in array
+Rp = Rp.reshape((n,n))
+Rmtxs = np.array([Rt,Rs,Rp])
+m = np.shape(Rmtxs)[0] # number of reward matrices
+for k in range(m): print(Rmtxs[k])
+
 ### run simulation
 
-n = np.shape(T)[0] # number of nodes
 for i in range(n): assert abs(np.sum(T[i,:])-1.)<1.E-08
-assert n==np.shape(R)[0]
 assert (b>=1 and b<=n)
 assert (a>=1 and a<=n)
 np.random.seed(seed)
-rvals = np.zeros(npaths,dtype=float) # list of reward values for paths
-tvals = np.zeros(npaths,dtype=int) # list of MFPTs for paths
+Rvals = np.zeros((m,npaths),dtype=float) # list of reward values for paths (time,entropy,action)
 # main simulation loop
 for i in range(npaths):
     x = b-1 # x denotes current node
-    r = 0. # reward of current iteration
-    n = 0 # number of steps in path
+    Rpath = np.zeros(m,dtype=float) # rewards for current iteration
 #    print("path no:",i)
     while x!=a-1:
 #        print("  x:",x+1)
@@ -80,13 +65,14 @@ for i in range(npaths):
                 y = z # y denotes next node
                 break
 #        print ("    y:",y+1)
-        r += R[x,y] # reward for transition
-        n += 1
+        for k in range(m): # rewards for transition
+            Rpath[k] += Rmtxs[k,x,y]
         x = y
-    rvals[i] = r
-    tvals[i] = n
+    for k in range(m):
+        Rvals[k,i] = Rpath[k]
 
-ravg = np.sum(rvals)/float(npaths) # average reward
-print("\naverage reward:\t",ravg)
-mfpt = np.sum(tvals.astype(float)*tau)/float(npaths) # mean first passage time (MFPT)
-print("\nMFPT:\n",mfpt)
+Ravg = np.zeros(m,dtype=float) # averages of rewards for first passage path ensemble
+for k in range(m): Ravg[k] = np.sum(Rvals[k])/float(npaths) # average reward
+print("\nMean first passage time (MFPT):\t",Ravg[0])
+print("\nAverage path entropy flow:\t",Ravg[1])
+print("\nAverage path action:\t\t",Ravg[2])
