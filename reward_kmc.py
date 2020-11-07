@@ -5,26 +5,35 @@ Python script to perform kMC for a given DTMC with associated reward values for 
 from __future__ import print_function
 import numpy as np
 
-# transition probability matrix
+### INPUT
+'''
+# specify transition probability matrix and lag time (DTMC)
 T = np.array([[0.50, 0.20, 0.15, 0.15, 0.00],
               [0.15, 0.75, 0.10, 0.00, 0.00],
               [0.20, 0.10, 0.45, 0.10, 0.15],
               [0.05, 0.00, 0.25, 0.70, 0.00],
               [0.00, 0.00, 0.10, 0.00, 0.90]])
+tau=0.05 # lag time
+tau_vec = [tau]*np.shape(T)[0]
+'''
 
-b=4 # ID of initial node (indexed from 1)
-a=5 # ID of target (absorbing) node (indexed from 1)
+# alternatively, read in data from pickled branching probability matrix and vector of mean waiting times (NB entropy calc is then invalid)
+T = np.load("branchmtx.pkl")
+tau_vec = np.load("meanwaittimes.pkl")
 
-seed=23 # seed for random number generator
+
+b=1 # ID of initial node (indexed from 1)
+a=8 # ID of target (absorbing) node (indexed from 1)
+
+seed=17 # seed for random number generator
 
 npaths = 100000 # no. of paths to simulate
 
-tau=0.05 # lag time
-
+### RUN
 # various reward matrices
 n = np.shape(T)[0] # number of nodes
 # time
-Rt = (np.repeat(tau,n*n)).reshape((n,n))
+Rt = (np.repeat(tau_vec,n)).reshape((n,n))
 # entropy flow
 Rs = np.zeros((n,n),dtype=float)
 for i in range(n):
@@ -40,7 +49,10 @@ Rp[nan_idx] = 0.
 Rp = Rp.reshape((n,n))
 Rmtxs = np.array([Rt,Rs,Rp])
 m = np.shape(Rmtxs)[0] # number of reward matrices
-for k in range(m): print(Rmtxs[k])
+print("\ntransition matrix:\n",T)
+print("\nreward matrices: (time,entropy,action)")
+for k in range(m): print("\n",Rmtxs[k])
+print("\ninitial state:",b,"final state:",a)
 
 ### run simulation
 
@@ -53,18 +65,14 @@ Rvals = np.zeros((m,npaths),dtype=float) # list of reward values for paths (time
 for i in range(npaths):
     x = b-1 # x denotes current node
     Rpath = np.zeros(m,dtype=float) # rewards for current iteration
-#    print("path no:",i)
     while x!=a-1:
-#        print("  x:",x+1)
         s = np.random.rand()
-#        print("    s:",s)
         tsum = 0.
         for z, t in enumerate(T[x,:]):
             tsum += t
             if s < tsum:
                 y = z # y denotes next node
                 break
-#        print ("    y:",y+1)
         for k in range(m): # rewards for transition
             Rpath[k] += Rmtxs[k,x,y]
         x = y
@@ -73,6 +81,6 @@ for i in range(npaths):
 
 Ravg = np.zeros(m,dtype=float) # averages of rewards for first passage path ensemble
 for k in range(m): Ravg[k] = np.sum(Rvals[k])/float(npaths) # average reward
-print("\nMean first passage time (MFPT):\t",Ravg[0])
+print("\n\nMean first passage time (MFPT):\t",Ravg[0])
 print("\nAverage path entropy flow:\t",Ravg[1])
 print("\nAverage path action:\t\t",Ravg[2])
