@@ -51,6 +51,7 @@ TYPE path
    INTEGER :: d                    ! djs244> dynamical activity
    INTEGER :: k                    ! if defined, this path is the k-th shortest path
    INTEGER :: i                    ! index in the now-linear candidate_paths array 
+   INTEGER, ALLOCATABLE :: visits(:) ! djs244> array indicates numbers of times that nodes are visited along path (only allocated and used with extra printing option)
    TYPE(path), POINTER :: pred     ! predecessor in path
    TYPE(path), POINTER :: next     ! next in list of k-th shortest path
                                    ! or next in list of candidates
@@ -59,7 +60,7 @@ END TYPE path
 TYPE node
    INTEGER :: index                ! index of minimum, corresponding to line number in min.data
    LOGICAL :: permanent            ! used in Dijkstra
-   DOUBLE PRECISION :: k_esc       ! djs244> (log) escape rate for the node
+   DOUBLE PRECISION :: t_esc       ! djs244> mean waiting time for the node (NOT a log)
    TYPE(edge), POINTER :: pred     ! top of list of incoming edges
    TYPE(edge), POINTER :: succ     ! top of list of outgoing edges
    TYPE(path), POINTER :: shortest ! top of list of k-th shortest paths
@@ -97,11 +98,14 @@ LOGICAL, INTENT(IN) :: GETCANDIDATES
 LOGICAL DEADTS(NTS), ISA(NMIN), ISB(NMIN), CHANGED, ISSTART(NMIN), CHECKCONN, ADDMIN(NMIN), ADDTS(NTS)
 LOGICAL SAVE_DEADTS(NTS)
 LOGICAL FILE_EXIST ! djs244> bool to check existence of file
+CHARACTER(LEN=10) PATHSTR ! djs244> for writing numbers of node visits to files
+CHARACTER(LEN=80) FPOO ! djs244> for writing numbers of node visits to files
 DOUBLE PRECISION ESC_RATES(NMIN) ! djs244> escape rates for nodes
 
 INTEGER, PARAMETER :: MAXPATH=10000 ! longest path length allowed - surely 10000 is enough?!
 INTEGER J1, J2, J3, PARENT(NMIN), J5, LJ1, LJ2, VERYBESTSTART, ENDMIN
 INTEGER K1, K2, K3, KSHORT, NCOUNT
+INTEGER K4 ! djs244> another loop variable
 INTEGER VERYBESTEND, J6, NWORST, PAIRSTODO, NDUMMY, NDUMMY2
 INTEGER VERYBESTPARENT(NMIN), NMINSTART, NMINEND, NDISTEND(NMIN), NSTEPS, TSPATHID(MAXPATH), MINPATHID(MAXPATH), NTSMIN
 INTEGER NCOL(NMIN), NVAL(NCONNMAX,NMIN), NDEAD, NDISTA(NMIN), NDISTB(NMIN), NCYCLE, DMIN, ISTAT
@@ -391,15 +395,20 @@ loopstart: DO J1=1,ENDMIN
           ESC_RATES = -HUGE(0.D0)
       ENDDO
 
+      IF (DEBUG) PRINT *, "kshortestpaths> printing log transition rates"
       DO k1 = 1, NTS
          tsedge(k1)%index = 0
          IF (DEADTS(K1)) CYCLE
          !tsedge(k1)%index = k1
 
          ! djs244> increment escape rates array
-         ESC_RATES(PLUS(K1)) = LOG(EXP(ESC_RATES(PLUS(K1)))+EXP(KPLUS(k1)))
+         ESC_RATES(PLUS(K1)) = LOG(EXP(ESC_RATES(PLUS(K1)))+EXP(KPLUS(K1)))
+         ESC_RATES(MINUS(K1)) = LOG(EXP(ESC_RATES(MINUS(K1)))+EXP(KMINUS(K1)))
+         IF (DEBUG) PRINT *, "edge:",k1,"from:",PLUS(k1),"rate:",KPLUS(k1),"    reverse edge... from:",MINUS(k1),"rate:",KMINUS(k1)
 
-         IF ( (PLUS(K1) == LJ1) .OR. (MINUS(K1) == LJ2) ) THEN
+!         IF ( (PLUS(K1) == LJ1) .OR. (MINUS(K1) == LJ2) ) THEN ! forward edge only (NB LJ1 is initial node, LJ2 is final node)
+!         IF (MINUS(K1)==LJ2) THEN ! djs244> use this IF statement to include edges to initial node (LJ1)
+         IF (.FALSE.) THEN
             ! the forwards edge corresponding to TS k1
             tsedge(k1)%l = -LOG(DMATMC(K1,1))
 
@@ -411,7 +420,9 @@ loopstart: DO J1=1,ENDMIN
             !tsedge(k1)%l = DMATMC(K1,1)
             tsedge(k1)%from => minnode(PLUS(K1))
             tsedge(k1)%to => minnode(MINUS(K1))
-         ELSEIF ( (MINUS(K1) == LJ1) .OR. (PLUS(K1) == LJ2) ) THEN
+!         ELSEIF ( (MINUS(K1) == LJ1) .OR. (PLUS(K1) == LJ2) ) THEN ! reverse edge only
+!         ELSEIF (PLUS(K1)==LJ2) THEN ! djs244> use this IF statement to include edges to initial node (LJ1)
+         ELSEIF (.FALSE.) THEN
             ! the backwards edge corresponding to TS k1, now at k1 + nts in tsedge array.
             tsedge(nts + k1)%l = -LOG(DMATMC(K1,2))
 
@@ -423,7 +434,7 @@ loopstart: DO J1=1,ENDMIN
             !tsedge(nts + k1)%l = DMATMC(K1,2)
             tsedge(nts + k1)%from => minnode(MINUS(K1))
             tsedge(nts + k1)%to => minnode(PLUS(K1))
-         ELSE
+         ELSE ! both forwards and reverse edges
             ! the forwards edge corresponding to TS k1
             tsedge(k1)%l = -LOG(DMATMC(K1,1))
 
@@ -452,19 +463,28 @@ loopstart: DO J1=1,ENDMIN
          IF (tsedge(nts + k1)%l < 0.0D0) tsedge(nts + k1)%l = 0.0D0
       ENDDO
 
-      ! djs244> set escape rates for nodes
+      ! djs244> set escape times for nodes
+      IF (DEBUG) PRINT *, "kshortestpaths> printing mean waiting times for nodes"
       DO k1=1,NMIN
-          minnode(k1)%k_esc = ESC_RATES(k1)
+          minnode(k1)%t_esc = 1.D0/EXP(ESC_RATES(k1))
+          IF (DEBUG) PRINT *, "node:",k1,"mean waiting time:",minnode(k1)%t_esc
       ENDDO
 
       ! djs244> print edge information
       IF (DEBUG) THEN
           PRINT *, "kshortestpaths> writing edge information for debugging..."
           DO k1=1,NTS
-              PRINT *, "id:", k1, "l:", tsedge(k1)%l, "ds:", tsedge(k1)%ds, "t:", 1./EXP(tsedge(k1)%k)
-              PRINT *, "id:", nts+k1, "l:", tsedge(nts+k1)%l, "ds:", tsedge(nts+k1)%ds, "t:", 1./EXP(tsedge(nts+k1)%k)
+              IF (associated(tsedge(k1)%from)) THEN ! edges from the final (target) node are not relevant to shortest paths
+                  PRINT *, "id:", k1, "from:", tsedge(k1)%from%index, "to:", tsedge(k1)%to%index
+                  PRINT *, "    l:", tsedge(k1)%l, "ds:", tsedge(k1)%ds, "t:", tsedge(k1)%from%t_esc
+              ENDIF
+              IF (associated(tsedge(nts+k1)%from)) THEN
+                  PRINT *, "id:", nts+k1, "from", tsedge(nts+k1)%from%index, "to:", tsedge(nts+k1)%to%index
+                  PRINT *, "    l:", tsedge(nts+k1)%l, "ds:", tsedge(nts+k1)%ds, "t:", tsedge(nts+k1)%from%t_esc
+              ENDIF
           ENDDO
       ENDIF
+      
 
       DO k1 = 1, NMIN
          !minnode(k1)%index = 0
@@ -503,6 +523,12 @@ loopstart: DO J1=1,ENDMIN
          shortest_paths(1,k3)%d = 0 ! djs244> reset dynamical activity
          shortest_paths(1,k3)%s = 0.D0 ! djs244> reset entropy flow
          shortest_paths(1,k3)%t = 0.D0 ! djs244> reset average time
+         IF (KSHORT_FULL_PRINTT) THEN ! djs244> reset numbers of node visits
+             IF (.NOT. ALLOCATED(shortest_paths(1,k3)%visits)) ALLOCATE(shortest_paths(1,k3)%visits(nmin))
+             DO k4=1,nmin
+                 shortest_paths(1,k3)%visits(k4)=0
+             ENDDO
+         ENDIF
       ENDDO
       IF (REGROUPFREET .OR. REGROUPPERSISTT) THEN
          DO k1 = 2, NMIN
@@ -513,6 +539,12 @@ loopstart: DO J1=1,ENDMIN
                shortest_paths(k1,k3)%d = 0 ! djs244> reset dynamical activity
                shortest_paths(k1,k3)%s = 0.D0 ! djs244> reset entropy flow
                shortest_paths(k1,k3)%t = 0.D0 ! djs244> reset time elapsed
+               IF (KSHORT_FULL_PRINTT) THEN ! djs244> reset numbers of node visits
+                   IF (.NOT. ALLOCATED(shortest_paths(k1,k3)%visits)) ALLOCATE(shortest_paths(k1,k3)%visits(nmin))
+                   DO k4=1,nmin
+                       shortest_paths(k1,k3)%visits(k4)=0
+                   ENDDO
+               ENDIF
             ENDDO
          ENDDO
       ELSE
@@ -528,6 +560,12 @@ loopstart: DO J1=1,ENDMIN
                shortest_paths(k1,k3)%d = 0 ! djs244> reset dynamical activity
                shortest_paths(k1,k3)%s = 0.D0 ! djs244> reset entropy flow
                shortest_paths(k1,k3)%t = 0.D0 ! djs244> reset time elapsed
+               IF (KSHORT_FULL_PRINTT) THEN ! djs244> reset numbers of node visits
+                   IF (.NOT. ALLOCATED(shortest_paths(k1,k3)%visits)) ALLOCATE(shortest_paths(k1,k3)%visits(nmin))
+                   DO k4=1,nmin
+                       shortest_paths(k1,k3)%visits(k4)=0
+                   ENDDO
+               ENDIF
             ENDDO
          ENDDO
       ENDIF
@@ -546,6 +584,12 @@ loopstart: DO J1=1,ENDMIN
       PRINT *, "kshortestpaths> dynamical activity of the first shortest path:", shortest_paths(LJ2,1)%d
       PRINT *, "kshortestpaths> entropy flow of the first shortest path:", shortest_paths(LJ2,1)%s
       PRINT *, "kshortestpaths> average time elapsed for the first shortest path:", shortest_paths(LJ2,1)%t
+      IF (KSHORT_FULL_PRINTT) THEN
+          PRINT *, "kshortestpaths> numbers of node visits on first shortest path:"
+          DO k1=1,NMIN
+              PRINT *, "node:", k1, "visits:", shortest_paths(LJ2,1)%visits(k1)
+          ENDDO
+      ENDIF
 
       DO K1 = 2, NPATHS
          CALL NEXT_PATH(LJ2, K1, LJ1) ! index of end min, which shortest path, index of start min.
@@ -591,7 +635,7 @@ loopstart: DO J1=1,ENDMIN
             pp => pp%next
          ENDDO
 
-         PRINT *,'kshortestpaths> shortest path: ',pp%k,' for start min ',LJ1,' and end min ',LJ2
+!         PRINT *,'kshortestpaths> shortest path: ',pp%k,' for start min ',LJ1,' and end min ',LJ2 ! djs244> comment out
          PATHNO = pp%k
          WEIGHT(LJ2) = pp%l ! djs244> NB this is the path action
          IF (pp%l == HUGESAVE) CYCLE loopend
@@ -600,6 +644,22 @@ loopstart: DO J1=1,ENDMIN
          ACTIVITY = pp%d
          ENTROPY_FLOW = pp%s
          AVG_PATH_TIME = pp%t
+         ! djs244> write node visits along path to file
+         IF (KSHORT_FULL_PRINTT) THEN
+             WRITE(PATHSTR,'(I10)') PATHNO
+             FPOO='visits.'//TRIM(ADJUSTL(PATHSTR))//'.dat'
+             INQUIRE(FILE=TRIM(ADJUSTL(FPOO)),EXIST=FILE_EXIST)
+             IF (FILE_EXIST) THEN
+                 OPEN(12,FILE=TRIM(ADJUSTL(FPOO)),STATUS="old",POSITION="append",ACTION="write")
+             ELSE
+                 OPEN(12,FILE=TRIM(ADJUSTL(FPOO)),STATUS="new",ACTION="write")
+             ENDIF
+             DO k4=1,nmin
+                 WRITE(12,*) pp%visits(k4)
+             ENDDO
+             CLOSE(12)
+         ENDIF
+
 
          ! Now follow the required kth shortest path to find the predecessors (= parents).
          DO
@@ -689,14 +749,13 @@ loopstart: DO J1=1,ENDMIN
          ADDMIN(LJ1) = .TRUE.
 
 !         IF (DEBUG) PRINT '(A,I6,A,A1,A,I6,A,G20.10,A,I8)', &
-         PRINT '(A,I6,A,A1,A,I6,A,G20.10,A,I8)', &
- &         'kshortestpaths> kth best path for minimum ',LJ2,' and ', DIRECTION(2:2),' minimum ',LJ1,' k^SS=', &
- &            EXP(-WEIGHT(LJ2))*EXP(PFMIN(LJ1)-PFTOTALSTART)/EMKSUM(LJ1),' steps=',NSTEPS
+!         PRINT '(A,I6,A,A1,A,I6,A,G20.10,A,I8)', &
+! &         'kshortestpaths> kth best path for minimum ',LJ2,' and ', DIRECTION(2:2),' minimum ',LJ1,' k^SS=', &
+! &            EXP(-WEIGHT(LJ2))*EXP(PFMIN(LJ1)-PFTOTALSTART)/EMKSUM(LJ1),' steps=',NSTEPS
 
          ! djs244> write raw path costs (sum of neg log branching probabilities, ie "path action") to file
-         PRINT *, "kshortestpaths> I am going to write the path actions"
+!         PRINT *, "kshortestpaths> I am going to write the path actions"
          INQUIRE(FILE="path_costs.dat",EXIST=FILE_EXIST)
-         PRINT *, "quack"
          IF (FILE_EXIST) THEN
              OPEN(9,FILE="path_costs.dat",STATUS="old",POSITION="append",ACTION="write")
          ELSE
@@ -705,11 +764,11 @@ loopstart: DO J1=1,ENDMIN
          WRITE(9,*) PATHNO, WEIGHT(LJ2)
          CLOSE(9)
         ! djs244> write other path quantities to file
-         INQUIRE(FILE="path_entropy.dat",EXIST=FILE_EXIST)
+         INQUIRE(FILE="path_properties.dat",EXIST=FILE_EXIST)
          IF (FILE_EXIST) THEN
-             OPEN(11,FILE="path_entropy.dat",STATUS="old",POSITION="append",ACTION="write")
+             OPEN(11,FILE="path_properties.dat",STATUS="old",POSITION="append",ACTION="write")
          ELSE
-             OPEN(11,FILE="path_entropy.dat",STATUS="new",ACTION="write")
+             OPEN(11,FILE="path_properties.dat",STATUS="new",ACTION="write")
              WRITE(11,*) "# path no. / dynamical activity / average path time / entropy flow along path"
          ENDIF
          WRITE(11,*) PATHNO, ACTIVITY, AVG_PATH_TIME, ENTROPY_FLOW
@@ -718,6 +777,8 @@ loopstart: DO J1=1,ENDMIN
 !
 ! Calculate and return the forwards and backwards MFPTs for this unbranched kth fastest path, using GT.
 !
+         GOTO 19952 ! djs244> skip the printing of MFPTs
+
          CALL MFPT(NSTEPS, TSPATHID, WAITAB, WAITBA)
 
          IF (DIRECTION.EQ.'AB') THEN ! B to A
@@ -745,6 +806,8 @@ loopstart: DO J1=1,ENDMIN
                PRINT '(A,2G20.10)','WARNING - alternative product of branching probabilities=',DUMMY, EXP(-WEIGHT(LJ2))
             ENDIF
          ENDIF
+
+         19952 CONTINUE ! djs244> skipped printing
 !
 !  Note that VERYBEST contains the conditional probability and is divided by the waiting time.
 !  We could get the contribution to NSS rate constants if we did some short KMC runs to get
@@ -1049,8 +1112,8 @@ CHARACTER(LEN=80) FPOO, FPOO2
 !
 ! File name indices are x.start.end.k
 !
-IF (DIRECTION.EQ.'AB') PRINT '(A)','kshortestpaths> Note that path is printed backwards starting with A, ending with B'
-IF (DIRECTION.EQ.'BA') PRINT '(A)','kshortestpaths> Note that path is printed backwards starting with B, ending with A'
+! IF (DIRECTION.EQ.'AB') PRINT '(A)','kshortestpaths> Note that path is printed backwards starting with A, ending with B' ! djs244> comment out
+! IF (DIRECTION.EQ.'BA') PRINT '(A)','kshortestpaths> Note that path is printed backwards starting with B, ending with A'
 
 WRITE(CONNSTR,'(I10)') KSHORT
 WRITE(SSTR,'(I10)') START
@@ -1066,11 +1129,12 @@ DO J1=1,NSTEPS
 ENDDO
 CLOSE(1)
 
-IF (.NOT.(REGROUPRATET.OR.REGROUPPET.OR.REGROUPFREET.OR.DUMMYTST .OR. REGROUPPERSISTT)) PRINT '(A,I6)', &
-&       'kshortestpaths> dumping minima and transition state coordinates to file redopoints.fastest.xxx, steps=',NSTEPS
-
 ! djs244> skip the dumping of coordinates (only produce Epath files)
 IF (NOPOINTS) GOTO 1995
+
+
+IF (.NOT.(REGROUPRATET.OR.REGROUPPET.OR.REGROUPFREET.OR.DUMMYTST .OR. REGROUPPERSISTT)) PRINT '(A,I6)', &
+&       'kshortestpaths> dumping minima and transition state coordinates to file redopoints.fastest.xxx, steps=',NSTEPS
 
 FPOO='stationary.points.pdb.fastest.'//TRIM(ADJUSTL(SSTR))//'.'//TRIM(ADJUSTL(ESTR))//'.'//TRIM(ADJUSTL(CONNSTR))
 IF (CHARMMT) THEN
@@ -1171,10 +1235,11 @@ END SUBROUTINE KSHORT_PRINTING
 
 SUBROUTINE my_dijkstra(start, nmin)
 USE GRAPH
-USE COMMONS, ONLY : DEBUG
+USE COMMONS, ONLY : DEBUG, KSHORT_FULL_PRINTT
 IMPLICIT NONE
 
 INTEGER :: start, i, j, minadj, n, m, nmin
+INTEGER :: k4 ! djs244> extra loop variable
 DOUBLE PRECISION :: minweight
 TYPE(edge), POINTER :: p
 
@@ -1185,6 +1250,11 @@ TYPE(edge), POINTER :: p
        shortest_paths(i,1)%s = 0. ! djs244> path entropy
        shortest_paths(i,1)%t = 0. ! djs244> average path time
        shortest_paths(i,1)%k = 1
+       IF (KSHORT_FULL_PRINTT) THEN ! djs244> numbers of node visits
+           DO k4 = 1, nmin ! djs244>
+               shortest_paths(i,1)%visits(k4) = 0
+           ENDDO
+       ENDIF
        IF (minnode(i)%index == 0) CYCLE ! i.e. index is used to flag an unphysical minimum.
        minnode(i)%permanent = .FALSE.
        shortest_paths(i,1)%node => minnode(i)
@@ -1212,7 +1282,16 @@ TYPE(edge), POINTER :: p
              shortest_paths(m,1)%l = shortest_paths(i,1)%l + p%l
              shortest_paths(m,1)%d = shortest_paths(i,1)%d + 1 ! djs244> update dynamical activity
              shortest_paths(m,1)%s = shortest_paths(i,1)%s + p%ds ! djs244> update entropy flow
-             shortest_paths(m,1)%t = shortest_paths(i,1)%t + 1.D0/EXP(p%k) ! djs244> update average path time
+             shortest_paths(m,1)%t = shortest_paths(i,1)%t + p%from%t_esc ! djs244> update average path time
+             IF (KSHORT_FULL_PRINTT) THEN ! djs244> update numbers of node visits
+                 DO k4=1,nmin
+                     IF (k4==p%from%index) THEN
+                         shortest_paths(m,1)%visits(p%from%index) = shortest_paths(i,1)%visits(p%from%index) + 1
+                     ELSE
+                         shortest_paths(m,1)%visits(k4) = shortest_paths(i,1)%visits(k4)
+                     ENDIF
+                 ENDDO
+             ENDIF
              shortest_paths(m,1)%pred => shortest_paths(i,1)
           ENDIF
           p => p%nextsucc
@@ -1281,20 +1360,20 @@ END SUBROUTINE add_succ
 !         due to the added edge (cf weight, which is for the path action)
 SUBROUTINE add_candidate(i, j, k, weight, sweight, tweight) ! (node, predecessor, which path the predecessor is from, weight of j -> i)
 USE GRAPH
-USE COMMONS, ONLY : DEBUG ! djs244> added some extra print statement for debugging
+USE COMMONS, ONLY : DEBUG, KSHORT_FULL_PRINTT, NMIN ! djs244> added some extra print statements for debugging and computation of numbers of node visits
 IMPLICIT NONE
 
 TYPE(path), POINTER :: p
 
 INTEGER :: i, j, k, m, n1, n2
+INTEGER :: k4 ! djs244> extra loop variable
 DOUBLE PRECISION :: weight
 
 ! djs244> additional subroutine arguments relating to stochastic dynamics
 DOUBLE PRECISION :: sweight, tweight
 
 ! djs244> extra debug printing
-IF (DEBUG) PRINT *, "in add_candidate(), sweight=", sweight, "tweight=", tweight
-IF (DEBUG) PRINT *, "entropy flow of path was:", shortest_paths(j,k)%s
+IF (DEBUG) PRINT *, "    add_candidate(), node:", i, "    predecessor:", j, "    path:",k, "      weight=",weight,"tweight=", tweight
 
 m = index_next(i)
 
@@ -1304,13 +1383,20 @@ candidate_paths(m)%l = shortest_paths(j,k)%l + weight
 candidate_paths(m)%d = shortest_paths(j,k)%d + 1 ! djs244> update dynamical activity
 candidate_paths(m)%s = shortest_paths(j,k)%s + sweight ! djs244> update entropy flow
 candidate_paths(m)%t = shortest_paths(j,k)%t + tweight ! djs244> update average time
+IF (KSHORT_FULL_PRINTT) THEN ! djs244> update numbers of node visits
+    IF (.NOT. ALLOCATED(candidate_paths(m)%visits)) ALLOCATE(candidate_paths(m)%visits(NMIN))
+    DO k4=1,nmin
+        IF (k4==j) THEN
+            candidate_paths(m)%visits(k4) = shortest_paths(j,k)%visits(k4) + 1
+        ELSE
+            candidate_paths(m)%visits(k4) = shortest_paths(j,k)%visits(k4)
+        ENDIF
+    ENDDO
+ENDIF
 candidate_paths(m)%pred => shortest_paths(j,k)
 candidate_paths(m)%node => minnode(i)
 candidate_paths(m)%i = m ! use %i to store the index for this path in candidate_paths
 candidate_paths(m)%k = m - index_start(i) + 1
-
-! djs244> extra debug printing
-IF (DEBUG) PRINT *, "entropy flow of path is now:", shortest_paths(j,k)%s + sweight
 
 ! Arrange the linked list of candidates in order of decreasing weight, i.e. tail of the list has the smallest weight.
 IF (ASSOCIATED(minnode(i)%cand)) THEN ! there is at least one entry in the list already.
@@ -1365,9 +1451,11 @@ END SUBROUTINE add_candidate
 SUBROUTINE delete_candidate(j, i, k) ! j is the index of the node; i is the index of the candidate to be removed; 
                                      ! k is the index of the predecessor of path i in the list.
 USE GRAPH
+USE COMMONS, ONLY : NMIN, KSHORT_FULL_PRINTT ! djs244> needed in loop over nodes to reset numbers of visits
 IMPLICIT NONE
 
 INTEGER :: i, j, k
+INTEGER :: k4 ! djs244> additional loop variable
 
 ! We're always removing the tail entry of the linked list, but 
 ! we need to be careful with its index in the candidate_paths array.
@@ -1384,6 +1472,11 @@ candidate_paths(i)%i = 0
 candidate_paths(i)%d = 0
 candidate_paths(i)%s = 0.D0
 candidate_paths(i)%t = 0.D0
+IF (KSHORT_FULL_PRINTT) THEN
+    DO k4 = 1,nmin
+        candidate_paths(i)%visits(k4) = 0
+    ENDDO
+ENDIF
 
 NULLIFY(candidate_paths(i)%pred,candidate_paths(i)%next,candidate_paths(i)%node)
 
@@ -1408,8 +1501,10 @@ TYPE(edge), POINTER :: p
 TYPE(path), POINTER :: pp, newpp, n1, n2
 NULLIFY(p, pp, newpp)
 
+IF (DEBUG) PRINT *, "NEXT_PATH() for node:", v, "      path:", k
+
 ! For situations where the source has no incoming edges (e.g. analysis of DPS databases)
-IF (v == start .AND. (.NOT. ASSOCIATED(minnode(v)%pred))) RETURN
+! IF (v == start .AND. (.NOT. ASSOCIATED(minnode(v)%pred))) RETURN ! djs244> I dont think we want this line if we want to consider B->B loops (first passage paths)
 
 ! Initialization: add entries to the candidate list for node v using its predecessors 
 ! and the shortest shortest paths from start -> pred, excluding the pred of v 
@@ -1420,11 +1515,10 @@ IF (k == 2) THEN
       IF (.NOT. ASSOCIATED(p)) EXIT
       u = p%from%index
       IF (shortest_paths(v,1)%pred%node%index /= u) THEN
-         IF (DEBUG) PRINT *, "in nextpath() with k=", k, "changes in path variables:" ! djs244>
-         weight = p%l ! djs244> NB this is the change in path action
+         weight = p%l ! djs244> change in path action
          sweight = p%ds ! djs244> change in entropy flow
-         tweight = 1.D0/EXP(p%k) ! djs244> change in time elapsed
-         IF (DEBUG) PRINT *, "    l:", weight, "s:", sweight, "t:", tweight ! djs244>
+         tweight = p%from%t_esc ! djs244> change in time elapsed
+!         IF (DEBUG) PRINT *, "  changes in path variables... l:", weight, "s:", sweight, "t:", tweight ! djs244> changes in path properties
          ! djs244> subroutine modified to also pass sweight and tweight arguments
          CALL add_candidate(v, u, 1, weight, sweight, tweight)
       ENDIF
@@ -1444,7 +1538,7 @@ DO
    IF (p%from%index == u) THEN
       weight = p%l ! needed in the call to add_candidate
       sweight = p%ds ! djs244> change in entropy flow
-      tweight = 1.D0/EXP(p%k) ! djs244> change in time elapsed
+      tweight = p%from%t_esc ! djs244> change in time elapsed
       EXIT
    ENDIF
    p => p%nextpred
