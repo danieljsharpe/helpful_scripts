@@ -109,6 +109,6 @@ if __name__=="__main__":
     else: rewards = calc_mfpr_block(n,T,Rmtxs)
 
 print("\n\n")
-print("Mean first passage time:\t",rewards[0])
-print("Mean path entropy flow:\t\t",rewards[1])
-print("Mean path action:\t\t",rewards[2])
+print("Mean first passage time:\t","{:.6e}".format(rewards[0]))
+print("Mean path entropy flow:\t\t","{:.6e}".format(rewards[1]))
+print("Mean path action:\t\t","{:.6e}".format(rewards[2]))

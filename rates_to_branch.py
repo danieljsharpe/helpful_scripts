@@ -31,12 +31,17 @@ tau = np.zeros(n,dtype=float) # vector of mean waiting times
 for conn, wt in zip(conns,wts):
     P[conn[0],conn[1]] = wt[0]
     P[conn[1],conn[0]] = wt[1]
+K = P.copy() # transition rate matrix
 for i in range(n):
-    tau[i] = 1./np.sum(P[i,:])
+    ksum = np.sum(P[i,:])
+    tau[i] = 1./ksum # mean waiting time for transitions from i-th node
+    K[i,i] = -1.*ksum
     P[i,:] *= tau[i]
 
+print("\ntransition rate matrix:\n",K)
 print("\nbranching probability matrix:\n",P)
 print("\nmean waiting times vector:\n",tau)
+print("\naction matrix (for shortest paths algorithm:\n",-1.*np.log(P))
 
 # dump array info to files that can be read back in with pickle (e.g. via np.load())
 P.dump("branchmtx.pkl")

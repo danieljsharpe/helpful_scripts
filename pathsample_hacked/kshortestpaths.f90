@@ -407,8 +407,8 @@ loopstart: DO J1=1,ENDMIN
          IF (DEBUG) PRINT *, "edge:",k1,"from:",PLUS(k1),"rate:",KPLUS(k1),"    reverse edge... from:",MINUS(k1),"rate:",KMINUS(k1)
 
 !         IF ( (PLUS(K1) == LJ1) .OR. (MINUS(K1) == LJ2) ) THEN ! forward edge only (NB LJ1 is initial node, LJ2 is final node)
-!         IF (MINUS(K1)==LJ2) THEN ! djs244> use this IF statement to include edges to initial node (LJ1)
-         IF (.FALSE.) THEN
+         IF (MINUS(K1)==LJ2) THEN ! djs244> use this IF statement to include edges to initial node (LJ1)
+!         IF (.FALSE.) THEN
             ! the forwards edge corresponding to TS k1
             tsedge(k1)%l = -LOG(DMATMC(K1,1))
 
@@ -421,8 +421,8 @@ loopstart: DO J1=1,ENDMIN
             tsedge(k1)%from => minnode(PLUS(K1))
             tsedge(k1)%to => minnode(MINUS(K1))
 !         ELSEIF ( (MINUS(K1) == LJ1) .OR. (PLUS(K1) == LJ2) ) THEN ! reverse edge only
-!         ELSEIF (PLUS(K1)==LJ2) THEN ! djs244> use this IF statement to include edges to initial node (LJ1)
-         ELSEIF (.FALSE.) THEN
+         ELSEIF (PLUS(K1)==LJ2) THEN ! djs244> use this IF statement to include edges to initial node (LJ1)
+!         ELSEIF (.FALSE.) THEN
             ! the backwards edge corresponding to TS k1, now at k1 + nts in tsedge array.
             tsedge(nts + k1)%l = -LOG(DMATMC(K1,2))
 
@@ -1503,8 +1503,25 @@ NULLIFY(p, pp, newpp)
 
 IF (DEBUG) PRINT *, "NEXT_PATH() for node:", v, "      path:", k
 
+!PRINT *, ">>> 1%pred"
+!p => minnode(1)%pred
+!DO
+!    IF (.NOT. ASSOCIATED(p)) EXIT
+!    PRINT *, "from:", p%from%index, "to:", p%to%index, "weight:", p%l
+!    p => p%nextpred
+!ENDDO
+!PRINT *, ">>> 2%succ"
+!p => minnode(2)%succ
+!DO
+!    IF (.NOT. ASSOCIATED(p)) EXIT
+!    PRINT *, "from:", p%from%index, "to:", p%to%index, "weight:", p%l
+!    p => p%nextsucc
+!ENDDO
+!STOP
+
 ! For situations where the source has no incoming edges (e.g. analysis of DPS databases)
-! IF (v == start .AND. (.NOT. ASSOCIATED(minnode(v)%pred))) RETURN ! djs244> I dont think we want this line if we want to consider B->B loops (first passage paths)
+!IF (v == start .AND. (.NOT. ASSOCIATED(minnode(v)%pred))) RETURN ! djs244> I dont think we want this line if we want to consider B->B loops (first passage paths)
+IF (v==start) RETURN
 
 ! Initialization: add entries to the candidate list for node v using its predecessors 
 ! and the shortest shortest paths from start -> pred, excluding the pred of v 
