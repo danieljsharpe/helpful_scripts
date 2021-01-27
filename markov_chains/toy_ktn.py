@@ -16,7 +16,7 @@ Eb = np.array([[0.0,4.0,5.0,5.0,0.0], # off-diagonal upper-triangular elements a
                [0.0,0.0,0.0,0.0,0.0],
                [0.0,0.0,0.0,0.0,0.0]])
 
-beta = 1. # effective inverse temperature
+beta = 0.2 # effective inverse temperature
 tau = 5. # lag time at which transition probability matrix is estimated
 
 n = np.shape(E)[0]
@@ -51,7 +51,7 @@ pi = revecs_T[:,idx]/np.sum(revecs_T[:,idx]) # stationary distribution
 for i in range(n): assert abs(np.dot(pi,K)[i])<1.E-08
 for i in range(n): assert abs(np.dot(pi,T)[i]-pi[i])<1.E-08
 
-
+'''
 # an example problem to print
 T=np.array([[ 0.5,   0.2,   0.15,  0.15,  0.  ],
             [ 0.15,  0.75,  0.1,   0.,    0.  ],
@@ -67,7 +67,7 @@ K=np.array([[-10.,   4.,   3.,   3.,   0.],
 
 pi=np.array([0.15506773,0.20364316,0.19897244,0.14385801,0.29845866])
 n = np.shape(T)[0]
-
+'''
 
 # print DISCOTRESS input files for CTMC and DTMC
 edge_weights_ctmc = open("edge_weights_ctmc.dat","w")
