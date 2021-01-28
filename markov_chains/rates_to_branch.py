@@ -7,8 +7,9 @@ from __future__ import print_function
 import numpy as np
 
 ### INPUT
-n=8 # no. of states in continuous-time Markov chain (CTMC)
-e=16 # no. of edges (bidrectional transitions) in CTMC
+n=5 # no. of states in continuous-time Markov chain (CTMC)
+e=6 # no. of edges (bidrectional transitions) in CTMC
+do_committors = True # flag to also dump committor probability data from "committor_AB.dat" output file
 
 ### RUN
 conns = np.zeros((e,2),dtype=int) # list of connections in CTMC
@@ -46,3 +47,14 @@ print("\naction matrix (for shortest paths algorithm:\n",-1.*np.log(P))
 # dump array info to files that can be read back in with pickle (e.g. via np.load())
 P.dump("branchmtx.pkl")
 tau.dump("meanwaittimes.pkl")
+
+if not do_committors: quit()
+
+q = np.zeros(n,dtype=float) # vector of committor probabilities
+with open("committor_AB.dat","r") as q_f:
+    i=0
+    for line in q_f.readlines():
+        q[i] = float(line.split()[0])
+        i+=1
+print("\ncommittor probabilities vector:\n",q)
+q.dump("committors.pkl")

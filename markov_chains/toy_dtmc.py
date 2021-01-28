@@ -9,6 +9,11 @@ from scipy import linalg
 
 ### SETUP AND BASIC CHECKS OF INITIAL DISCRETE-TIME MARKOV CHAIN
 
+n = 5 # no. of states (nodes)
+nB = 1 # no. of nodes in initial state (must be listed as first nodes)
+nA = 1 # no. of nodes in absorbing state (must be listed as the final nodes)
+do_ctmc = False # if True, DTMC from first code section is transformed to a CTMC and further operations are performed
+
 #'''
 # discrete-time irreducible stochastic transition matrix - the last state is considered to be the target state
 # note: this stochastic matrix satisfies global, but not detailed, balance
@@ -17,32 +22,36 @@ P = np.array([[0.50,0.20,0.15,0.15,0.00],
               [0.20,0.10,0.45,0.10,0.15],
               [0.05,0.00,0.25,0.70,0.00],
               [0.00,0.00,0.10,0.00,0.90]],dtype=float)
-# committor probabilities when first node is initial state and last node is target state
-q = np.array([1.2480468750024063e-01,1.4062499999997560e-01,3.5156250000032622e-01,2.9296875000007163e-01,1.0000000000000000])
 tau = 0.05 # lag time of DTMC
+tau_vec = np.array([tau]*np.shape(P)[0])
+# committor probabilities when first node is initial state and last node is target state
+# NB for qp vector, committor probs for *all* (incl initial) nodes must satisfy first-step relation
+#    for q  vector, committor probs for initial nodes are zero by definition (initialised below)
+qp = np.array([1.2480468750024063e-01,1.4062499999997560e-01,3.5156250000032622e-01,2.9296875000007163e-01,1.0000000000000000])
 #'''
 
 '''
-# note: this stochastic matrix satisfies detailed balance
-P = np.array([[0.689622064025,  0.120415338886,  0.137060624417,  0.051559295782,   0.001342676891],
-              [0.539664108186,  0.167800224012,  0.256339627614,  0.032624562996,   0.003571477191],
-              [0.372569404749,  0.155477843447,  0.438655166013,  0.022670287116,   0.010627298674],
-              [0.628120809478,  0.088682756755,  0.101601177991,  0.180696343792,   0.000898911984],
-              [0.073307674326,  0.043509499312,  0.213454999903,  0.004028644016,   0.665699182443]])
-q = np.array([0.00602639465359,0.011354684274,0.022282345176,0.005089430731,1.000000000000])
-tau = 5.
+# alternatively, read in data from pickled branching probability matrix, vector of mean waiting times,
+#and A<-B committor probabilities. (NB: the computed variances in the FPT distribution are then not valid)
+P = np.load("branchmtx.pkl")
+tau_vec = np.load("meanwaittimes.pkl")
+qp = np.load("committors.pkl")
 '''
 
-n = np.shape(P)[0] # number of states (nodes)
 
+assert n==np.shape(P)[0]
 for i in range(n): # check row-stochasticity of transition matrix
     assert abs(np.sum(P[i,:])-1.) < 1.E-08
-for i in range(n-1): # check first step relation for committor probabilities for non-target nodes
+
+# check first step relation for committor probabilities for non-target nodes
+for i in range(n-1):
     q_nbr = 0.
     for j in range(n):
         if j==0: continue
-        q_nbr += P[i,j]*q[j]
-    assert abs(q[i]-q_nbr)<1.E-08
+        q_nbr += P[i,j]*qp[j]
+    assert abs(qp[i]-q_nbr)<1.E-08
+q = qp.copy()
+for i in range(nB): q[i]=0.
 
 
 ### INVESTIGATE FUNDAMENTAL MATRIX OF THE ABSORBING (REDUCIBLE) MARKOV CHAIN
@@ -51,37 +60,39 @@ Pr = np.zeros((n,n)) # stochastic matrix for transition process (reactive portio
 Pn = np.zeros((n,n)) # for nonreactive process (here, the final node is a dummy node introduced to ensure that the nonreactive traj terminates)
 for i in range(n-1):
     for j in range(n):
-        if j==0:
+        # reactive (transition) process
+        if j<nB: # reactive process does not re-enter initial state
             Pr[i,j] = 0.
         else:
-            Pr[i,j] = P[i,j]*q[j]/q[i] # here, q_i for i=initial node should satisfy first step relation
-        qi=q[i]; qj=q[j]
-        if i==0: qi=0.
-        if j==0: qj=0.
-        if j!=n-1:
-            Pn[i,j] = P[i,j]*(1.-qj)/(1.-qi)
-        elif i==0:
-            Pn[i,j] = q[i]
-Pr[-1,-1] = 1.
-Pn[-1,-1] = 1.
+            Pr[i,j] = P[i,j]*qp[j]/qp[i] # here, committor prob for i=initial node should satisfy first step relation
+        # nonreactive process
+        if j<n-nA: # j is not an absorbing state
+            Pn[i,j] = P[i,j]*(1.-q[j])/(1.-q[i]) # here, committor prob should be 0 for initial states, *not* satisfying first step relation
+        elif i<nB: # i is an initial state
+            Pn[i,j] = qp[i]
+for i in range(n-nA,n): # only outgoing transitions for absorbing states are self-loops
+    Pr[i,i] = 1.
+    Pn[i,i] = 1.
 
-Q = P[:-1,:-1] # substochastic matrix of nonabsorbing states (i.e. Q-matrix of transition matrix in canonical form)
+Q = P[:-nA,:-nA] # substochastic matrix of nonabsorbing states (i.e. Q-matrix of transition matrix in canonical form)
 
 ''' in the following, note that the element n_{ij} of the fundamental matrix N is equal to the expected number of times
     node j is visited, given that the process starts in node i, prior to absorption. This does not include the fact that
     the process starts in node i, so the row sums are equal to the no. of steps prior to absorption when starting in state i'''
 
-M = np.eye(n-1,dtype=float)-Q # Markovian kernel
+M = np.eye(n-nA,dtype=float)-Q # Markovian kernel
 N = np.linalg.inv(M) # fundamental matrix of absorbing Markov chain
-Nvar = np.dot(N,2.*np.diag(np.diagonal(N))-np.eye(n-1))-(N*N)
-H = np.dot(N-np.eye(n-1),np.diag([1./x for x in np.diagonal(N)])) # visitation probabilities along first passage paths
-Nr = np.linalg.inv(np.eye(n-1)-Pr[:-1,:-1]) # expected numbers of node visits along transition (reactive) paths
-Nn = np.linalg.inv(np.eye(n-1)-Pn[:-1,:-1]) # expected numbers of node visits along nonreactive paths
-Eta = np.dot(Nr-np.eye(n-1),np.diag([1./x for x in np.diagonal(Nr)])) # visitation probabilities along transition (reactive) paths
-Etn = np.dot(Nn-np.eye(n-1),np.diag([1./x for x in np.diagonal(Nn)])) # visitation probabilities along nonreactive paths
+Nvar = np.dot(N,2.*np.diag(np.diagonal(N))-np.eye(n-nA))-(N*N)
+H = np.dot(N-np.eye(n-nA),np.diag([1./x for x in np.diagonal(N)])) # visitation probabilities along first passage paths
+Nr = np.linalg.inv(np.eye(n-nA)-Pr[:-1,:-1]) # expected numbers of node visits along transition (reactive) paths
+Nn = np.linalg.inv(np.eye(n-nA)-Pn[:-1,:-1]) # expected numbers of node visits along nonreactive paths
+Hr = np.dot(Nr-np.eye(n-nA),np.diag([1./x for x in np.diagonal(Nr)])) # visitation probabilities along transition (reactive) paths
+Hn = np.dot(Nn-np.eye(n-nA),np.diag([1./x for x in np.diagonal(Nn)])) # visitation probabilities along nonreactive paths
 
-l = np.dot(N,np.ones(n-1)) # vector of expected path lengths
-lvar =  np.dot((2.*N)-np.eye(n-1),l)-(l*l)  # vector of variances associated with MFPTs
+l = np.dot(N,np.ones(n-nA)) # vector of expected first passage path lengths
+m = l*tau_vec[:n-nA] # vector of mean first passage times (MFPTs)
+lvar =  np.dot((2.*N)-np.eye(n-nA),l)-(l*l)  # vector of variances in first passage path lengths
+mvar = lvar*tau_vec[:n-nA]*tau_vec[:n-nA] # vector of variances associated with MFPTs (only valid for DTMC)
 
 print("\ndiscrete-time transition probability matrix:\n",P)
 print("\nstochastic matrix for reactive process:\n",Pr)
@@ -90,14 +101,12 @@ print("\nfundamental matrix of absorbing chain (mean numbers of node visits):\n"
 print("\nvariances in numbers of node visits:\n",Nvar)
 print("\nvisitation probability matrix:\n",H)
 print("\nmean numbers of node visits for reactive paths:\n",Nr)
-print("\nreactive visitation probability matrix:\n",Eta)
+print("\nreactive visitation probability matrix:\n",Hr)
 print("\nmean numbers of node visits for nonreactive paths:\n",Nn)
-print("\nnonreactive visitation probability matrix:\n",Etn)
+print("\nnonreactive visitation probability matrix:\n",Hn)
 
-print("\n")
-for i in range(n-1):
-    print("expected time to absorption (MFPT) / variance thereof, when starting in state %i:    %.6f   /   %.6f" \
-        % (i+1,l[i]*tau,lvar[i]*(tau**2)))
+print("\n\nnode  /     MFPT      /   FPT variance")
+for i in range(n-nA): print("{:4d}".format(i+1),"\t","{:.6e}".format(m[i]),"\t","{:.6e}".format(mvar[i]))
 
 
 ### EIGENDECOMPOSITION OF DISCRETE-TIME MARKOV CHAIN
@@ -111,6 +120,58 @@ assert abs(evals[evals.argsort()[-1]]-1.)<1.E-08 # there should be a single domi
 pi = revecs[0,:]/np.sum(revecs[0,:]) # equilibrium occupation probabilities (normalised dominant right eigenvector)
 print("\nstationary distribution:\n",pi)
 print("\neigenvalues:\n",evals)
+
+
+### DANIEL TRANSITION PATH THEORY QUANTITIES
+
+# initial probability distribution for first passage trajectories is local equilibrium distribution within B
+p0tot = 0.
+for i in range(nB):
+    p0tot += pi[i]
+p0 = pi[:nB].copy()/p0tot
+# expected number of times that transient nodes are visited along A<-B first passage trajectories
+theta = np.dot(p0,N[:nB,:])
+# expected number of times that transient nodes are visited along nonreactive B<-B trajectories
+thetanr = np.zeros(n-nA,dtype=float)
+for i in range(n-nA):
+    thetanr[i] = theta[i]*(1.-q[i]) # committor probability must be zero for initial state in this context
+# initial probability distribution for *reactive* trajectories (contained at boundary of B state)
+p0r = np.zeros(nB,dtype=float)
+for i in range(nB):
+    for j in range(n):
+        p0r[i] += P[i,j]*q[j]  # committor probability must be zero for initial state in this context
+    p0r[i] *= thetanr[i]
+assert abs(np.sum(p0r)-1.)<1.E-08
+# expected number of times that transient nodes are visited along reactive A<-B (i.e. transition) trajectories
+thetar = np.dot(p0r,Nr[:nB,:])
+# initial probability distribution for *reactive* trajectories at steady-state
+p0rss = np.zeros(nB,dtype=float)
+for i in range(nB):
+    for j in range(n):
+        p0rss[i] += P[i,j]*q[j] # committor probability must be zero for initial state in this context
+    p0rss[i] *= pi[i]
+p0rss *= 1./np.sum(p0rss)
+# expected number of times that transient nodes are visited along reactive trajectories at steady-state
+thetarss = np.dot(p0rss,Nr[:nB,:])
+# visitation probabilities for transient nodes
+eta = np.dot(p0,H[:nB,:]) # visitation probabilities for first passage trajectories
+etar = np.dot(p0r,Hr[:nB,:]) # visitation probabilities for reactive trajectories
+etarss = np.dot(p0rss,Hr[:nB,:]) # visitation probabilities for reactive trajectories at steady-state
+
+print("\ninitial probability distribution for reactive trajectories:\n",p0r)
+print("initial probability distribution for reactive trajectories at steady-state:\n",p0rss)
+print("\n\nexpected number of node visits for transient states:\n", \
+      "node /  first passage  /   reactive   /  nonreactive  /  reactive steady-state")
+for i in range(n-nA):
+    print("{:4d}".format(i+1),"\t","{:.6e}".format(theta[i]),"\t","{:.6e}".format(thetar[i]),"\t", \
+          "{:.6e}".format(thetanr[i]),"\t","{:.6e}".format(thetarss[i]))
+print("\n\nvisitation probabilities for transient states:\n", \
+      "node /  first passage  /   reactive   /  reactive steady-state")
+for i in range(n-nA):
+    print("{:4d}".format(i+1),"\t","{:.6e}".format(eta[i]),"\t","{:.6e}".format(etar[i]),"\t", \
+          "{:.6e}".format(etarss[i]))
+
+quit()
 
 
 # INVESTIGATE FUNDAMENTAL MATRIX OF IRREDUCIBLE DTMC
@@ -161,6 +222,7 @@ print("\nKemeny constant:",np.trace(A)*tau)
 print("\nmatrix of MFPTs (from group inverse):\n",MFPT_A*tau)
 print("\nvariances of FPT distribution (from group inverse):\n",Var_A*(tau**2))
 
+if not do_ctmc: quit()
 
 # COMPUTE CONTINUOUS-TIME MARKOV CHAIN AND ANALOGOUS QUANTITIES TO THOSE GIVEN ABOVE
 
