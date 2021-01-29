@@ -9,12 +9,13 @@ from scipy import linalg
 
 ### SETUP AND BASIC CHECKS OF INITIAL DISCRETE-TIME MARKOV CHAIN
 
-n = 5 # no. of states (nodes)
-nB = 1 # no. of nodes in initial state (must be listed as first nodes)
-nA = 1 # no. of nodes in absorbing state (must be listed as the final nodes)
+n = 15 # no. of states (nodes)
+nB = 6 # no. of nodes in initial state (must be listed as first nodes)
+ndB = 3 # no. of nodes at the boundary of the initial state B (must be listed after the internal nodes of the initial state
+nA = 3 # no. of nodes in absorbing state (must be listed as the final nodes)
 do_ctmc = False # if True, DTMC from first code section is transformed to a CTMC and further operations are performed
 
-#'''
+'''
 # discrete-time irreducible stochastic transition matrix - the last state is considered to be the target state
 # note: this stochastic matrix satisfies global, but not detailed, balance
 P = np.array([[0.50,0.20,0.15,0.15,0.00],
@@ -28,26 +29,37 @@ tau_vec = np.array([tau]*np.shape(P)[0])
 # NB for qp vector, committor probs for *all* (incl initial) nodes must satisfy first-step relation
 #    for q  vector, committor probs for initial nodes are zero by definition (initialised below)
 qp = np.array([1.2480468750024063e-01,1.4062499999997560e-01,3.5156250000032622e-01,2.9296875000007163e-01,1.0000000000000000])
-#'''
-
 '''
+
+#'''
 # alternatively, read in data from pickled branching probability matrix, vector of mean waiting times,
 #and A<-B committor probabilities. (NB: the computed variances in the FPT distribution are then not valid)
 P = np.load("branchmtx.pkl")
 tau_vec = np.load("meanwaittimes.pkl")
 qp = np.load("committors.pkl")
-'''
+#'''
 
+#'''
+# quack - need to do some reordering of initial nodes for 15-state CTMC model
+P[[3,4]] = P[[4,3]] # swap row
+P[:,[3,4]] = P[:,[4,3]] # swap columns
+P[[1,3]] = P[[3,1]]
+P[:,[1,3]] = P[:,[3,1]]
+tau_vec[3], tau_vec[4] = tau_vec[4], tau_vec[3]
+tau_vec[1], tau_vec[3] = tau_vec[3], tau_vec[1]
+qp[3], qp[4] = qp[4], qp[3]
+qp[1], qp[3] = qp[3], qp[1]
+#'''
 
 assert n==np.shape(P)[0]
 for i in range(n): # check row-stochasticity of transition matrix
-    assert abs(np.sum(P[i,:])-1.) < 1.E-08
+    assert abs(np.sum(P[i,:])-1.)<1.E-08
 
 # check first step relation for committor probabilities for non-target nodes
-for i in range(n-1):
+for i in range(n-nA):
     q_nbr = 0.
     for j in range(n):
-        if j==0: continue
+        if j<nB: continue # ignore transitions to nodes of initial set
         q_nbr += P[i,j]*qp[j]
     assert abs(qp[i]-q_nbr)<1.E-08
 q = qp.copy()
@@ -58,12 +70,12 @@ for i in range(nB): q[i]=0.
 
 Pr = np.zeros((n,n)) # stochastic matrix for transition process (reactive portion of trajectories)
 Pn = np.zeros((n,n)) # for nonreactive process (here, the final node is a dummy node introduced to ensure that the nonreactive traj terminates)
-for i in range(n-1):
+for i in range(n-nA):
     for j in range(n):
         # reactive (transition) process
         if j<nB: # reactive process does not re-enter initial state
             Pr[i,j] = 0.
-        else:
+        elif i>=(nB-ndB): # only initial nodes that are at the boundary of the B state are relevant to the reactive process
             Pr[i,j] = P[i,j]*qp[j]/qp[i] # here, committor prob for i=initial node should satisfy first step relation
         # nonreactive process
         if j<n-nA: # j is not an absorbing state
@@ -84,17 +96,23 @@ M = np.eye(n-nA,dtype=float)-Q # Markovian kernel
 N = np.linalg.inv(M) # fundamental matrix of absorbing Markov chain
 Nvar = np.dot(N,2.*np.diag(np.diagonal(N))-np.eye(n-nA))-(N*N)
 H = np.dot(N-np.eye(n-nA),np.diag([1./x for x in np.diagonal(N)])) # visitation probabilities along first passage paths
-Nr = np.linalg.inv(np.eye(n-nA)-Pr[:-1,:-1]) # expected numbers of node visits along transition (reactive) paths
-Nn = np.linalg.inv(np.eye(n-nA)-Pn[:-1,:-1]) # expected numbers of node visits along nonreactive paths
-Hr = np.dot(Nr-np.eye(n-nA),np.diag([1./x for x in np.diagonal(Nr)])) # visitation probabilities along transition (reactive) paths
+Nr = np.linalg.inv(np.eye(n-nB+ndB-nA)-Pr[nB-ndB:-nA,nB-ndB:-nA]) # expected numbers of node visits along transition (reactive) paths
+Nn = np.linalg.inv(np.eye(n-nA)-Pn[:-nA,:-nA]) # expected numbers of node visits along nonreactive paths
+Hr = np.dot(Nr-np.eye(n-nB+ndB-nA),np.diag([1./x for x in np.diagonal(Nr)])) # visitation probabilities along transition (reactive) paths
 Hn = np.dot(Nn-np.eye(n-nA),np.diag([1./x for x in np.diagonal(Nn)])) # visitation probabilities along nonreactive paths
+# pad matrices corresponding to reactive quantities, if there are internal (i.e. non-boundary) initial nodes
+if nB!=ndB:
+    Nr = np.pad(Nr,(nB-ndB,0),mode="constant")
+    Hr = np.pad(Hr,(nB-ndB,0),mode="constant")
 
 l = np.dot(N,np.ones(n-nA)) # vector of expected first passage path lengths
-m = l*tau_vec[:n-nA] # vector of mean first passage times (MFPTs)
+m = np.dot(N,tau_vec[:n-nA]) # vector of mean first passage times (MFPTs)
 lvar =  np.dot((2.*N)-np.eye(n-nA),l)-(l*l)  # vector of variances in first passage path lengths
 mvar = lvar*tau_vec[:n-nA]*tau_vec[:n-nA] # vector of variances associated with MFPTs (only valid for DTMC)
 
-print("\ndiscrete-time transition probability matrix:\n",P)
+print("\ntransition probability matrix:\n",P)
+print("\nlag time (if DTMC) or mean waiting time (if CTMC) vector:\n",tau_vec)
+print("\ncommittor probability vector:\n",qp)
 print("\nstochastic matrix for reactive process:\n",Pr)
 print("\nstochastic matrix for nonreactive process:\n",Pn)
 print("\nfundamental matrix of absorbing chain (mean numbers of node visits):\n",N)
@@ -117,7 +135,7 @@ evals, levecs = np.linalg.eig(P) # calculate left eigenvectors of the irreducibl
 levecs = np.array([levecs[:,i] for i in evals.argsort()[::-1]])
 evals = evals[evals.argsort()[::-1]]
 assert abs(evals[evals.argsort()[-1]]-1.)<1.E-08 # there should be a single dominant eigenvalue equal to unity
-pi = revecs[0,:]/np.sum(revecs[0,:]) # equilibrium occupation probabilities (normalised dominant right eigenvector)
+pi = np.real(revecs[0,:]/np.sum(revecs[0,:])) # equilibrium occupation probabilities (normalised dominant right eigenvector)
 print("\nstationary distribution:\n",pi)
 print("\neigenvalues:\n",evals)
 
@@ -170,6 +188,7 @@ print("\n\nvisitation probabilities for transient states:\n", \
 for i in range(n-nA):
     print("{:4d}".format(i+1),"\t","{:.6e}".format(eta[i]),"\t","{:.6e}".format(etar[i]),"\t", \
           "{:.6e}".format(etarss[i]))
+print("\nA<-B MFPT:\t","{:.6e}".format(np.dot(p0,m[:nB])))
 
 quit()
 
@@ -223,6 +242,7 @@ print("\nmatrix of MFPTs (from group inverse):\n",MFPT_A*tau)
 print("\nvariances of FPT distribution (from group inverse):\n",Var_A*(tau**2))
 
 if not do_ctmc: quit()
+
 
 # COMPUTE CONTINUOUS-TIME MARKOV CHAIN AND ANALOGOUS QUANTITIES TO THOSE GIVEN ABOVE
 

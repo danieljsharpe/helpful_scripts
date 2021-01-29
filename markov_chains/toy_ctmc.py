@@ -12,15 +12,10 @@ K = np.array([[-5.,2.0,2.0,1.0],
 tau = 5.E-03 # lag time
 #'''
 
-'''
-# note: this rate matrix satisfies detailed balance
-K = np.array([[-0.142479765469,  0.082084998624,    0.030197383422,  0.030197383422,  0.            ],
-              [ 0.367879441171,  -0.59100960132,    0.223130160148,  0.,              0.            ],
-              [ 0.082084998624,  0.135335283237,   -0.225593824737,  0.004086771438,  0.004086771438],
-              [ 0.367879441171,  0.            ,    0.018315638889, -0.38619508006,   0.            ],
-              [ 0.,              0.,                0.082084998624,  0.,             -0.082084998624]])
-tau = 5. # lag time
-'''
+#'''
+# alternatively, read in data from pickled rate matrix and vector of mean waiting times
+K = np.load("ratemtx.pkl")
+#'''
 
 n = np.shape(K)[0] # number of states
 

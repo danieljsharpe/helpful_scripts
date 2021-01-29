@@ -9,7 +9,7 @@ import numpy as np
 ### INPUT
 n=5 # no. of states in continuous-time Markov chain (CTMC)
 e=6 # no. of edges (bidrectional transitions) in CTMC
-do_committors = True # flag to also dump committor probability data from "committor_AB.dat" output file
+do_committors = False # flag to also dump committor probability data from "committor_AB.dat" output file
 
 ### RUN
 conns = np.zeros((e,2),dtype=int) # list of connections in CTMC
@@ -42,9 +42,10 @@ for i in range(n):
 print("\ntransition rate matrix:\n",K)
 print("\nbranching probability matrix:\n",P)
 print("\nmean waiting times vector:\n",tau)
-print("\naction matrix (for shortest paths algorithm:\n",-1.*np.log(P))
+print("\naction matrix (for shortest paths algorithm):\n",-1.*np.log(P))
 
 # dump array info to files that can be read back in with pickle (e.g. via np.load())
+K.dump("ratemtx.pkl")
 P.dump("branchmtx.pkl")
 tau.dump("meanwaittimes.pkl")
 
