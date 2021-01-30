@@ -7,13 +7,40 @@ import numpy as np
 from math import sqrt
 from scipy import linalg
 
-### SETUP AND BASIC CHECKS OF INITIAL DISCRETE-TIME MARKOV CHAIN
+''' basic implementation of Daniel's state reduction algorithm to compute the fundamental matrix for a reducible
+    Markov chain. Args: (stochastic matrix, no. of transient states) '''
+def stateredn_absfundmtx(T,nQ):
+    nS = np.shape(T)[0] # total no. of states
+#    print("T shape:",np.shape(T))
+    # construct augmented matrix
+    Naug = np.pad(T,(0,nQ),mode="constant",constant_values=((0.)))
+    ''' NB zero weights for transitions from absorbing to dummy nodes and vice versa, and for transitions between
+        dummy nodes, but weight=unity for transitions to and from a dummy node and its transient partner '''
+    for i in range(nQ):
+        Naug[i,i+nS], Naug[i+nS,i] = 1., 1.
+#    print("Naug shape:",np.shape(Naug))
+#    print("\ninitial augmented matrix:\n",Naug)
+    for x in range(nQ): # eliminate each of the transient nodes
+        Naug[x,x]=0.
+        # calculate GT factor in numerically stable manner
+        Nfac = 0.
+        for j in range(x+1,nS):
+            Nfac += Naug[x,j]
+        for i in range(x+1,nS+nQ):
+            for j in range(x+1,nS+nQ):
+                Naug[i,j] += Naug[i,x]*Naug[x,j]/Nfac
+        Naug[x,:], Naug[:,x] = 0., 0. # remove row and column corresponding to eliminated node
+    return Naug[nS:,nS:]
+
+
+### SETUP AND BASIC CHECKS OF INITIAL DISCRETE-TIME MARKOV CHAIN ###
 
 n = 15 # no. of states (nodes)
 nB = 6 # no. of nodes in initial state (must be listed as first nodes)
 ndB = 3 # no. of nodes at the boundary of the initial state B (must be listed after the internal nodes of the initial state
 nA = 3 # no. of nodes in absorbing state (must be listed as the final nodes)
 do_ctmc = False # if True, DTMC from first code section is transformed to a CTMC and further operations are performed
+use_statereduction = True # fundamental matrix of absorbing MC is calcd by state reduction (T) or by simple matrix inversion operation (F)
 
 '''
 # discrete-time irreducible stochastic transition matrix - the last state is considered to be the target state
@@ -93,11 +120,18 @@ Q = P[:-nA,:-nA] # substochastic matrix of nonabsorbing states (i.e. Q-matrix of
     the process starts in node i, so the row sums are equal to the no. of steps prior to absorption when starting in state i'''
 
 M = np.eye(n-nA,dtype=float)-Q # Markovian kernel
-N = np.linalg.inv(M) # fundamental matrix of absorbing Markov chain
+if not use_statereduction: # fundamental matrices of absorbing Markov chain computed by simple matrix inversion operations
+    N = np.linalg.inv(M)
+    Nr = np.linalg.inv(np.eye(n-nB+ndB-nA)-Pr[nB-ndB:-nA,nB-ndB:-nA]) # expected numbers of node visits along transition (reactive) paths
+    Nn = np.linalg.inv(np.eye(n-nA)-Pn[:-nA,:-nA]) # expected numbers of node visits along nonreactive paths
+else: # fundamental matrices of absorbing Markov chain computed by state reduction algorithm
+    N = stateredn_absfundmtx(P,n-nA)
+    Nr = stateredn_absfundmtx(Pr[nB-ndB:,nB-ndB:],n-nB+ndB-nA)
+#    print("Nr shape:",np.shape(Nr))
+#    quit()
+    Nn = stateredn_absfundmtx(Pn,n-nA)
 Nvar = np.dot(N,2.*np.diag(np.diagonal(N))-np.eye(n-nA))-(N*N)
 H = np.dot(N-np.eye(n-nA),np.diag([1./x for x in np.diagonal(N)])) # visitation probabilities along first passage paths
-Nr = np.linalg.inv(np.eye(n-nB+ndB-nA)-Pr[nB-ndB:-nA,nB-ndB:-nA]) # expected numbers of node visits along transition (reactive) paths
-Nn = np.linalg.inv(np.eye(n-nA)-Pn[:-nA,:-nA]) # expected numbers of node visits along nonreactive paths
 Hr = np.dot(Nr-np.eye(n-nB+ndB-nA),np.diag([1./x for x in np.diagonal(Nr)])) # visitation probabilities along transition (reactive) paths
 Hn = np.dot(Nn-np.eye(n-nA),np.diag([1./x for x in np.diagonal(Nn)])) # visitation probabilities along nonreactive paths
 # pad matrices corresponding to reactive quantities, if there are internal (i.e. non-boundary) initial nodes
