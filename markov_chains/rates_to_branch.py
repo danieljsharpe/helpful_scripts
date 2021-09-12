@@ -7,9 +7,12 @@ from __future__ import print_function
 import numpy as np
 
 ### INPUT
-n=5 # no. of states in continuous-time Markov chain (CTMC)
-e=6 # no. of edges (bidrectional transitions) in CTMC
-do_committors = False # flag to also dump committor probability data from "committor_AB.dat" output file
+n= 15 # no. of states in continuous-time Markov chain (CTMC)
+e= 28 # no. of edges (bidrectional transitions) in CTMC
+branch = True # print branching matrix (T) or linearised transition probability matrix (F)
+tau_lin = 0.01 # mean waiting time for all nodes of linearised transition matrix (not used for branching matrix)
+do_stat_prob = True # flag to also dump stationary probability distribution from "stat_prob.dat" file
+do_committors = True # flag to also dump committor probability data from "committor_AB.dat" output file
 
 ### RUN
 conns = np.zeros((e,2),dtype=int) # list of connections in CTMC
@@ -27,17 +30,26 @@ with open("edge_weights.dat","r") as wts_f: # note that file contains ln transit
         wts[i,1] = np.exp(float(line.split()[1]))
         i+=1
 
-P = np.zeros((n,n),dtype=float) # branching probability matrix
+K = np.zeros((n,n),dtype=float) # transition rate matrix matrix
 tau = np.zeros(n,dtype=float) # vector of mean waiting times
 for conn, wt in zip(conns,wts):
-    P[conn[0],conn[1]] = wt[0]
-    P[conn[1],conn[0]] = wt[1]
-K = P.copy() # transition rate matrix
-for i in range(n):
-    ksum = np.sum(P[i,:])
-    tau[i] = 1./ksum # mean waiting time for transitions from i-th node
-    K[i,i] = -1.*ksum
-    P[i,:] *= tau[i]
+    K[conn[0],conn[1]] = wt[0]
+    K[conn[1],conn[0]] = wt[1]
+if branch:
+    P = K.copy() # branching probability matrix
+    for i in range(n):
+        ksum = np.sum(K[i,:])
+        tau[i] = 1./ksum # mean waiting time for transitions from i-th node
+        K[i,i] = -1.*ksum
+        P[i,:] *= tau[i]
+else:
+    for i in range(n):
+        ksum = np.sum(K[i,:])
+        assert tau_lin<1./ksum
+        K[i,i] = -1.*ksum
+        tau[i] = tau_lin
+    P = np.eye(n)+(tau_lin*K) # linearised transition probability matrix
+
 
 print("\ntransition rate matrix:\n",K)
 print("\nbranching probability matrix:\n",P)
@@ -48,6 +60,15 @@ print("\naction matrix (for shortest paths algorithm):\n",-1.*np.log(P))
 K.dump("ratemtx.pkl")
 P.dump("branchmtx.pkl")
 tau.dump("meanwaittimes.pkl")
+
+if not do_stat_prob: quit()
+pi = np.zeros(n,dtype=float)
+with open("stat_prob.dat","r") as pi_f:
+    i=0
+    for line in pi_f.readlines():
+        pi[i] = np.exp(float(line.split()[0]))
+        i+=1
+pi.dump("stat_prob.pkl")
 
 if not do_committors: quit()
 
